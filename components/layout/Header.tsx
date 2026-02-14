@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { ROUTES } from "@/lib/constants";
+import { isAdminEmail } from "@/lib/admin";
 import UserMenu from "./UserMenu";
 
 type Props = {
@@ -12,6 +13,7 @@ export default async function Header({
 }: Props) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  const isAdmin = isAdminEmail(user?.email ?? "");
 
   return (
     <header className="flex items-center justify-between gap-4 pb-12">
@@ -23,7 +25,7 @@ export default async function Header({
       </Link>
       <div className="flex items-center gap-3">
         {user ? (
-          <UserMenu user={user} balance={1000} />
+          <UserMenu user={user} balance={1000} isAdmin={isAdmin} />
         ) : (
           <Link
             href={ROUTES.LOGIN}

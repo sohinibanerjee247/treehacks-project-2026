@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/server";
+import { isAdminEmail } from "@/lib/admin";
 import { Card } from "@/components/ui";
 import BetForm from "./BetForm";
 import ResolveButtons from "./ResolveButtons";
@@ -13,13 +15,17 @@ const MOCK_MARKET = {
   noOdds: 35,
   myYesCents: 0,
   myNoCents: 0,
-  isAdmin: false,
 };
 
 type Props = { params: { id: string } };
 
-export default function MarketPage({ params }: Props) {
-  const m = MOCK_MARKET;
+export default async function MarketPage({ params }: Props) {
+  const { id: marketId } = params;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const isAdmin = isAdminEmail(user?.email ?? "");
+
+  const m = { ...MOCK_MARKET, id: marketId };
 
   return (
     <div>
@@ -69,9 +75,9 @@ export default function MarketPage({ params }: Props) {
 
       {m.status === "open" && <BetForm />}
 
-      {m.isAdmin && m.status === "open" && (
+      {isAdmin && m.status === "open" && (
         <div className="mt-6">
-          <ResolveButtons />
+          <ResolveButtons marketId={marketId} />
         </div>
       )}
 

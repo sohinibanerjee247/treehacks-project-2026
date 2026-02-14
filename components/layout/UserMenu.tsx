@@ -3,15 +3,17 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
 import { ROUTES } from "@/lib/constants";
 import type { User } from "@supabase/supabase-js";
 
 type Props = {
   user: User;
   balance?: number;
+  isAdmin?: boolean;
 };
 
-export default function UserMenu({ user, balance = 1000 }: Props) {
+export default function UserMenu({ user, balance = 1000, isAdmin = false }: Props) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -79,33 +81,29 @@ export default function UserMenu({ user, balance = 1000 }: Props) {
             <div className="text-xs text-zinc-500 mt-0.5">{user.email}</div>
           </div>
           <div className="py-1">
-            <button
-              onClick={() => {
-                setOpen(false);
-                router.push(ROUTES.DASHBOARD);
-              }}
+            <Link
+              href={ROUTES.DASHBOARD}
+              onClick={() => setOpen(false)}
               className="flex w-full items-center px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800/50 transition-colors"
             >
               Dashboard
-            </button>
-            <button
-              onClick={() => {
-                setOpen(false);
-                // Navigate to settings when created
-              }}
-              className="flex w-full items-center px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800/50 transition-colors"
-            >
-              Settings
-            </button>
-            <button
-              onClick={() => {
-                setOpen(false);
-                router.push(ROUTES.CHANNELS);
-              }}
+            </Link>
+            {isAdmin && (
+              <Link
+                href={ROUTES.ADMIN_CREATE_MARKET}
+                onClick={() => setOpen(false)}
+                className="flex w-full items-center px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800/50 transition-colors"
+              >
+                Create market
+              </Link>
+            )}
+            <Link
+              href={ROUTES.CHANNELS}
+              onClick={() => setOpen(false)}
               className="flex w-full items-center px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800/50 transition-colors"
             >
               Communities
-            </button>
+            </Link>
           </div>
           <div className="border-t border-zinc-800 py-1">
             <button
