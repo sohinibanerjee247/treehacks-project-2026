@@ -1,28 +1,38 @@
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/server";
+import { ROUTES } from "@/lib/constants";
+import UserMenu from "./UserMenu";
 
 type Props = {
   title?: string;
-  user?: { name: string; balanceCents?: number } | null;
 };
 
-export default function Header({
+export default async function Header({
   title = "Micro Prediction Market",
-  user,
 }: Props) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
   return (
-    <header className="border-b border-zinc-800/80 pb-5">
-      <h1 className="text-lg font-medium tracking-tight">
-        <Link href="/" className="no-underline hover:underline underline-offset-4">
-          {title}
-        </Link>
-      </h1>
-      {user && (
-        <p className="mt-1.5 text-sm text-zinc-500">
-          {user.name}
-          {user.balanceCents != null &&
-            ` · $${(user.balanceCents / 100).toFixed(2)}`}
-        </p>
-      )}
+    <header className="flex items-center justify-between gap-4 pb-12">
+      <Link
+        href={user ? ROUTES.DASHBOARD : ROUTES.HOME}
+        className="text-xl font-semibold tracking-tight text-zinc-100 no-underline hover:text-white transition-colors"
+      >
+        {title}
+      </Link>
+      <div className="flex items-center gap-3">
+        {user ? (
+          <UserMenu user={user} balance={1000} />
+        ) : (
+          <Link
+            href={ROUTES.LOGIN}
+            className="rounded-lg border border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-300 hover:border-zinc-500 hover:text-zinc-100 transition-colors"
+          >
+            Log in
+          </Link>
+        )}
+      </div>
     </header>
   );
 }

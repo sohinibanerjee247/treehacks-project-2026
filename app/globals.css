@@ -3,14 +3,7 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-[#0a0a0a] text-zinc-200 antialiased;
-  }
   a {
-    @apply text-zinc-400 hover:text-white transition-colors duration-150;
-  }
-  input,
-  select {
-    @apply rounded-md border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-zinc-200 placeholder-zinc-600 focus:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 transition-colors;
+    @apply text-zinc-400 hover:text-zinc-100 transition-colors duration-150;
   }
 }

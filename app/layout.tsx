@@ -1,6 +1,13 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { Header, Nav } from "@/components/layout";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Micro Prediction Market",
@@ -13,12 +20,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen font-sans">
-        <div className="mx-auto max-w-xl px-5 py-10">
+    <html lang="en" className={inter.variable}>
+      <body className="min-h-screen font-sans bg-[#0a0a0a] text-zinc-100 antialiased">
+        <div className="mx-auto max-w-6xl px-6 py-8 sm:px-8 lg:py-12">
           <Header />
-          <Nav />
-          <main className="mt-10">{children}</main>
+          <main className="mt-12 lg:mt-16">{children}</main>
         </div>
       </body>
     </html>
