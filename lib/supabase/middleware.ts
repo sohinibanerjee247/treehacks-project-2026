@@ -29,8 +29,41 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Refresh session if expired
-  await supabase.auth.getUser();
+  // Refresh session if expired - wrap in try/catch to handle deleted users
+  try {
+    const { error } = await supabase.auth.getUser();
+    
+    // If there's an error (e.g., user was deleted), clear the auth cookies
+    // Don't log "Auth session missing" as it's expected for logged-out users
+    if (error && error.message !== "Auth session missing!") {
+      console.error("Auth middleware error:", error.message);
+    }
+    
+    // Clear stale cookies if there's any auth error
+    if (error) {
+      const cookiesToRemove = request.cookies.getAll()
+        .filter(cookie => cookie.name.startsWith('sb-'))
+        .map(cookie => cookie.name);
+      
+      cookiesToRemove.forEach(name => {
+        supabaseResponse.cookies.delete(name);
+      });
+    }
+  } catch (err: any) {
+    // Only log unexpected exceptions
+    if (err?.message !== "Auth session missing!") {
+      console.error("Auth middleware exception:", err?.message || err);
+    }
+    
+    // Clear auth cookies on any error
+    const cookiesToRemove = request.cookies.getAll()
+      .filter(cookie => cookie.name.startsWith('sb-'))
+      .map(cookie => cookie.name);
+    
+    cookiesToRemove.forEach(name => {
+      supabaseResponse.cookies.delete(name);
+    });
+  }
 
   return supabaseResponse;
 }

@@ -21,8 +21,8 @@ export default function LoginForm() {
 
   useEffect(() => {
     const err = searchParams.get("error");
-    if (err === "auth") {
-      setError("Authentication failed. Please try again.");
+    if (err) {
+      setError(err === "auth" ? "Authentication failed. Please try again." : err);
     }
   }, [searchParams]);
 

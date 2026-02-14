@@ -12,20 +12,24 @@ export default async function Header({
   title = "Micro Prediction Market",
 }: Props) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  const isAdmin = isAdminEmail(user?.email ?? "");
+  const { data: { user }, error } = await supabase.auth.getUser();
+  
+  // If there's an error fetching user (e.g., deleted user), treat as logged out
+  // This is expected for logged-out users, so we don't need to handle it specially
+  const currentUser = error ? null : user;
+  const isAdmin = isAdminEmail(currentUser?.email ?? "");
 
   return (
     <header className="flex items-center justify-between gap-4 pb-12">
       <Link
-        href={user ? ROUTES.DASHBOARD : ROUTES.HOME}
+        href={currentUser ? ROUTES.DASHBOARD : ROUTES.HOME}
         className="text-xl font-semibold tracking-tight text-zinc-100 no-underline hover:text-white transition-colors"
       >
         {title}
       </Link>
       <div className="flex items-center gap-3">
-        {user ? (
-          <UserMenu user={user} balance={1000} isAdmin={isAdmin} />
+        {currentUser ? (
+          <UserMenu user={currentUser} balance={1000} isAdmin={isAdmin} />
         ) : (
           <Link
             href={ROUTES.LOGIN}
