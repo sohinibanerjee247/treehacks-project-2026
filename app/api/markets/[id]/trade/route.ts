@@ -87,6 +87,10 @@ export async function POST(
   const currentYesShares = position?.yes_shares ?? 0;
   const currentNoShares = position?.no_shares ?? 0;
 
+  // Virtual liquidity for stable pricing while visible pool starts at 0.
+  const effectiveYesPool = (market.yes_pool ?? 0) > 0 ? market.yes_pool : 10000;
+  const effectiveNoPool = (market.no_pool ?? 0) > 0 ? market.no_pool : 10000;
+
   let newYesPool: number;
   let newNoPool: number;
   let sharesChange: number;
@@ -111,14 +115,14 @@ export async function POST(
     }
 
     if (side === "YES") {
-      const result = buyYes(market.yes_pool, market.no_pool, cost);
+      const result = buyYes(effectiveYesPool, effectiveNoPool, cost);
       sharesChange = result.shares;
       newYesPool = result.yesPool;
       newNoPool = result.noPool;
       newYesShares = currentYesShares + sharesChange;
       newNoShares = currentNoShares;
     } else {
-      const result = buyNo(market.yes_pool, market.no_pool, cost);
+      const result = buyNo(effectiveYesPool, effectiveNoPool, cost);
       sharesChange = result.shares;
       newYesPool = result.yesPool;
       newNoPool = result.noPool;
@@ -138,7 +142,7 @@ export async function POST(
           { status: 400 }
         );
       }
-      const result = sellYes(market.yes_pool, market.no_pool, amount);
+      const result = sellYes(effectiveYesPool, effectiveNoPool, amount);
       sharesChange = amount;
       newYesPool = result.yesPool;
       newNoPool = result.noPool;
@@ -152,7 +156,7 @@ export async function POST(
           { status: 400 }
         );
       }
-      const result = sellNo(market.yes_pool, market.no_pool, amount);
+      const result = sellNo(effectiveYesPool, effectiveNoPool, amount);
       sharesChange = amount;
       newYesPool = result.yesPool;
       newNoPool = result.noPool;

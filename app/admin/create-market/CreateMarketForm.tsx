@@ -16,6 +16,10 @@ export default function CreateMarketForm({ channels }: Props) {
   const [channelId, setChannelId] = useState(channels[0]?.id ?? "");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [rules, setRules] = useState("");
+  const [resolutionSource, setResolutionSource] = useState("");
+  const [closeTime, setCloseTime] = useState("");
+  const [expectedResolutionTime, setExpectedResolutionTime] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,6 +35,10 @@ export default function CreateMarketForm({ channels }: Props) {
           channelId,
           title: title.trim(),
           description: description.trim(),
+          rules: rules.trim(),
+          resolutionSource: resolutionSource.trim(),
+          closeTime,
+          expectedResolutionTime,
         }),
       });
       const data = await res.json();
@@ -78,15 +86,67 @@ export default function CreateMarketForm({ channels }: Props) {
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-zinc-500">
-            Description (optional)
+            Description
           </label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Resolves YES if..."
             rows={3}
+            required
             className="w-full rounded-md border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 disabled:opacity-50"
           />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-500">
+            Rules
+          </label>
+          <textarea
+            value={rules}
+            onChange={(e) => setRules(e.target.value)}
+            placeholder="YES if instructor or TA publishes average > 82.00. Otherwise NO."
+            rows={3}
+            required
+            className="w-full rounded-md border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:border-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-600 disabled:opacity-50"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-zinc-500">
+            Resolution source
+          </label>
+          <Input
+            value={resolutionSource}
+            onChange={(e) => setResolutionSource(e.target.value)}
+            placeholder="Instructor post on Canvas, official class announcement, etc."
+            required
+            disabled={loading}
+          />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-500">
+              Close time
+            </label>
+            <Input
+              type="datetime-local"
+              value={closeTime}
+              onChange={(e) => setCloseTime(e.target.value)}
+              required
+              disabled={loading}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-zinc-500">
+              Expected resolution time
+            </label>
+            <Input
+              type="datetime-local"
+              value={expectedResolutionTime}
+              onChange={(e) => setExpectedResolutionTime(e.target.value)}
+              required
+              disabled={loading}
+            />
+          </div>
         </div>
         {error && (
           <p className="text-sm text-red-400">{error}</p>

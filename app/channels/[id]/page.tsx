@@ -62,18 +62,31 @@ export default async function ChannelPage({ params }: Props) {
     .eq("channel_id", channelId)
     .order("created_at", { ascending: false });
 
+  // Get bet history so visible pool reflects real user bet dollars
+  const marketIds = markets?.map((m) => m.id) ?? [];
+  const { data: bets } = marketIds.length
+    ? await supabase
+        .from("bets")
+        .select("market_id, amount, type")
+        .in("market_id", marketIds)
+    : { data: [] as any[] };
+
   // Use CPMM pricing from pool state (fallback to 50/50 if no pools set)
   const marketOdds = markets?.map((m) => {
-    const yp = m.yes_pool ?? 10000;
-    const np = m.no_pool ?? 10000;
+    const yp = (m.yes_pool ?? 0) > 0 ? m.yes_pool : 10000;
+    const np = (m.no_pool ?? 0) > 0 ? m.no_pool : 10000;
     const total = yp + np;
     const yesPercent = total > 0 ? (np / total) * 100 : 50;
     const noPercent = total > 0 ? (yp / total) * 100 : 50;
+    const visiblePool = (bets ?? [])
+      .filter((b: any) => b.market_id === m.id)
+      .filter((b: any) => b.type !== "sell")
+      .reduce((sum: number, b: any) => sum + (b.amount ?? 0), 0);
     return {
       ...m,
       yesOdds: yesPercent,
       noOdds: noPercent,
-      totalPool: total,
+      totalPool: visiblePool,
     };
   });
 

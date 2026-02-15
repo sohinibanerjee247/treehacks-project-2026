@@ -19,24 +19,47 @@ export async function POST(req: NextRequest) {
   const channelId = String(body.channelId ?? "").trim();
   const title = String(body.title ?? "").trim();
   const description = String(body.description ?? "").trim();
+  const rules = String(body.rules ?? "").trim();
+  const resolutionSource = String(body.resolutionSource ?? "").trim();
+  const closeTime = String(body.closeTime ?? "").trim();
+  const expectedResolutionTime = String(body.expectedResolutionTime ?? "").trim();
 
-  if (!channelId || !title) {
+  if (!channelId || !title || !description || !rules || !resolutionSource || !closeTime || !expectedResolutionTime) {
     return NextResponse.json(
-      { error: "channelId and title required" },
+      { error: "channelId, title, description, rules, resolutionSource, closeTime, and expectedResolutionTime are required" },
       { status: 400 }
     );
   }
 
-  // Insert market into database with initial pool of 10,000 shares each (50/50 price)
+  const close = new Date(closeTime);
+  const expected = new Date(expectedResolutionTime);
+  if (Number.isNaN(close.getTime()) || Number.isNaN(expected.getTime())) {
+    return NextResponse.json(
+      { error: "Invalid closeTime or expectedResolutionTime" },
+      { status: 400 }
+    );
+  }
+  if (expected.getTime() < close.getTime()) {
+    return NextResponse.json(
+      { error: "Expected resolution time must be after close time" },
+      { status: 400 }
+    );
+  }
+
+  // Start visible pools at 0. Pricing uses virtual liquidity internally in UI/trade logic.
   const { data: market, error } = await supabase
     .from("markets")
     .insert({
       channel_id: channelId,
       title,
-      description: description || null,
+      description,
+      rules,
+      resolution_source: resolutionSource,
+      close_time: close.toISOString(),
+      expected_resolution_time: expected.toISOString(),
       created_by: user.id,
-      yes_pool: 10000,
-      no_pool: 10000,
+      yes_pool: 0,
+      no_pool: 0,
     })
     .select()
     .single();

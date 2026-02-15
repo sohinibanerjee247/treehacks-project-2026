@@ -35,11 +35,18 @@ export default async function MarketPage({ params }: Props) {
     );
   }
 
-  const yp = market.yes_pool ?? 10000;
-  const np = market.no_pool ?? 10000;
+  const yp = (market.yes_pool ?? 0) > 0 ? market.yes_pool : 10000;
+  const np = (market.no_pool ?? 0) > 0 ? market.no_pool : 10000;
   const yPrice = calcYesPrice(yp, np);
   const nPrice = calcNoPrice(yp, np);
-  const totalPool = yp + np;
+  const { data: bets } = await supabase
+    .from("bets")
+    .select("amount, type")
+    .eq("market_id", marketId);
+  // Visible pool = real money bet by users (exclude sell records)
+  const visiblePool = (bets ?? [])
+    .filter((b: any) => b.type !== "sell")
+    .reduce((sum: number, b: any) => sum + (b.amount ?? 0), 0);
 
   // Get current user
   const { data: { user } } = await supabase.auth.getUser();
@@ -116,12 +123,48 @@ export default async function MarketPage({ params }: Props) {
 
         {/* Pool and position info */}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-600">
-          <span>Pool: ${(totalPool / 100).toFixed(2)}</span>
+          <span>Pool: ${(visiblePool / 100).toFixed(2)}</span>
           {!userIsAdmin && (position.yes_shares > 0 || position.no_shares > 0) && (
             <span>
               Your position: {position.yes_shares.toFixed(1)} YES / {position.no_shares.toFixed(1)} NO
             </span>
           )}
+        </div>
+      </Card>
+
+      <Card className="mb-6">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-300">
+          Market Details
+        </h2>
+        {market.rules && (
+          <div className="mt-3">
+            <p className="text-xs font-medium text-zinc-400">Rules</p>
+            <p className="mt-1 text-sm text-zinc-300 whitespace-pre-wrap">{market.rules}</p>
+          </div>
+        )}
+        {market.resolution_source && (
+          <div className="mt-3">
+            <p className="text-xs font-medium text-zinc-400">Resolution Source</p>
+            <p className="mt-1 text-sm text-zinc-300">{market.resolution_source}</p>
+          </div>
+        )}
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-medium text-zinc-400">Close Time</p>
+            <p className="mt-1 text-sm text-zinc-300">
+              {market.close_time
+                ? new Date(market.close_time).toLocaleString()
+                : "Not set"}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-zinc-400">Expected Resolution</p>
+            <p className="mt-1 text-sm text-zinc-300">
+              {market.expected_resolution_time
+                ? new Date(market.expected_resolution_time).toLocaleString()
+                : "Not set"}
+            </p>
+          </div>
         </div>
       </Card>
 
