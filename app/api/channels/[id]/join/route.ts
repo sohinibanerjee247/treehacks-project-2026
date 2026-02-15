@@ -29,18 +29,21 @@ export async function POST(
     .single();
 
   if (channelError || !channel) {
+    console.error("Channel lookup failed:", channelError?.message);
     return NextResponse.json({ error: "Channel not found" }, { status: 404 });
   }
 
-  // Insert membership (upsert to avoid duplicate errors)
+  // Use plain insert instead of upsert (upsert needs UPDATE policy too)
   const { error } = await supabase
     .from("channel_members")
-    .upsert(
-      { user_id: user.id, channel_id: channelId },
-      { onConflict: "user_id,channel_id" }
-    );
+    .insert({ user_id: user.id, channel_id: channelId });
 
   if (error) {
+    // Duplicate = already joined, that's fine
+    if (error.code === "23505") {
+      return NextResponse.json({ ok: true });
+    }
+    console.error("Join channel failed:", error.code, error.message, error.details, error.hint);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

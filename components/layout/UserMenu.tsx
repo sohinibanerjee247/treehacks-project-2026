@@ -13,7 +13,7 @@ type Props = {
   isAdmin?: boolean;
 };
 
-export default function UserMenu({ user, balance = 1000, isAdmin = false }: Props) {
+export default function UserMenu({ user, balance = 100000, isAdmin = false }: Props) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -62,7 +62,7 @@ export default function UserMenu({ user, balance = 1000, isAdmin = false }: Prop
         )}
         <div className="hidden sm:block text-left">
           <div className="text-sm font-medium text-zinc-200">{displayName}</div>
-          <div className="text-xs text-zinc-500">${balance.toFixed(2)}</div>
+          <div className="text-xs text-zinc-500">${(balance / 100).toFixed(2)}</div>
         </div>
         <svg
           className={`h-4 w-4 text-zinc-500 transition-transform ${open ? "rotate-180" : ""}`}

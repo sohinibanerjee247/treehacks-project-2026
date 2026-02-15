@@ -2,7 +2,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
 import { Card } from "@/components/ui";
-import BetForm from "./BetForm";
+import { ROUTES } from "@/lib/constants";
+import { yesPrice as calcYesPrice, noPrice as calcNoPrice } from "@/lib/market";
+import TradeForm from "./TradeForm";
 import ResolveButtons from "./ResolveButtons";
 
 type Props = { params: { id: string } };
@@ -12,7 +14,7 @@ export default async function MarketPage({ params }: Props) {
   const supabase = await createClient();
   const userIsAdmin = await isAdmin();
 
-  // Fetch market from database
+  // Fetch market
   const { data: market, error } = await supabase
     .from("markets")
     .select(`
@@ -26,51 +28,50 @@ export default async function MarketPage({ params }: Props) {
     return (
       <div>
         <p className="text-zinc-500">Market not found.</p>
-        <Link href="/channels" className="text-sm text-zinc-400 hover:text-zinc-300">
-          ← Back to channels
+        <Link href={ROUTES.CHANNELS} className="text-sm text-zinc-400 hover:text-zinc-300">
+          ← Back to communities
         </Link>
       </div>
     );
   }
 
-  // Get bets to calculate odds
-  const { data: bets } = await supabase
-    .from("bets")
-    .select("*")
-    .eq("market_id", marketId);
+  const yp = market.yes_pool ?? 10000;
+  const np = market.no_pool ?? 10000;
+  const yPrice = calcYesPrice(yp, np);
+  const nPrice = calcNoPrice(yp, np);
+  const totalPool = yp + np;
 
-  const totalYes = bets?.filter((b) => b.side === "YES").reduce((sum, b) => sum + b.amount, 0) || 0;
-  const totalNo = bets?.filter((b) => b.side === "NO").reduce((sum, b) => sum + b.amount, 0) || 0;
-  const total = totalYes + totalNo;
-  const yesOdds = total > 0 ? Math.round((totalYes / total) * 100) : 50;
-  const noOdds = total > 0 ? Math.round((totalNo / total) * 100) : 50;
-
-  // Get current user (only for non-admin)
+  // Get current user
   const { data: { user } } = await supabase.auth.getUser();
-  
-  // Non-admin: get position and balance
-  let myYes = 0;
-  let myNo = 0;
-  let userBalance = 1000;
-  
-  if (user && !userIsAdmin) {
-    const myBets = bets?.filter((b) => b.user_id === user.id) || [];
-    myYes = myBets.filter((b) => b.side === "YES").reduce((sum, b) => sum + b.amount, 0);
-    myNo = myBets.filter((b) => b.side === "NO").reduce((sum, b) => sum + b.amount, 0);
 
+  // Get user position and balance
+  let userBalance = 0;
+  let position = { yes_shares: 0, no_shares: 0 };
+
+  if (user && !userIsAdmin) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("balance")
       .eq("id", user.id)
       .single();
-    userBalance = profile?.balance ?? 1000;
+    userBalance = profile?.balance ?? 0;
+
+    const { data: pos } = await supabase
+      .from("positions")
+      .select("yes_shares, no_shares")
+      .eq("user_id", user.id)
+      .eq("market_id", marketId)
+      .maybeSingle();
+    if (pos) {
+      position = { yes_shares: pos.yes_shares, no_shares: pos.no_shares };
+    }
   }
 
   return (
     <div>
       <p className="mb-6">
         <Link
-          href={`/channels/${market.channel_id}`}
+          href={ROUTES.CHANNEL(market.channel_id)}
           className="text-sm text-zinc-500 hover:text-zinc-400"
         >
           ← Back to {market.channel?.name || "channel"}
@@ -78,7 +79,7 @@ export default async function MarketPage({ params }: Props) {
       </p>
 
       <Card className="mb-6">
-        <h1 className="text-[17px] font-medium text-zinc-100 leading-snug">
+        <h1 className="text-lg font-semibold text-zinc-100 leading-snug">
           {market.title}
         </h1>
         {market.description && (
@@ -86,86 +87,81 @@ export default async function MarketPage({ params }: Props) {
             {market.description}
           </p>
         )}
+
+        {/* Price display as percentages */}
         <div className="mt-5 grid grid-cols-2 gap-3">
-          <div className="rounded-md border border-zinc-800/80 bg-zinc-900/20 py-4 text-center">
+          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 py-4 text-center">
             <p className="text-[11px] uppercase tracking-wider text-emerald-400">
               Yes
             </p>
-            <p className="mt-1 text-xl font-medium tabular-nums text-emerald-300">
-              {yesOdds}¢
+            <p className="mt-1 text-3xl font-semibold tabular-nums text-emerald-300">
+              {(yPrice * 100).toFixed(1)}%
+            </p>
+            <p className="mt-1 text-xs text-zinc-500">
+              {(yPrice * 100).toFixed(0)}¢ per share
             </p>
           </div>
-          <div className="rounded-md border border-zinc-800/80 bg-zinc-900/20 py-4 text-center">
+          <div className="rounded-lg border border-red-500/20 bg-red-500/5 py-4 text-center">
             <p className="text-[11px] uppercase tracking-wider text-red-400">
               No
             </p>
-            <p className="mt-1 text-xl font-medium tabular-nums text-red-300">
-              {noOdds}¢
+            <p className="mt-1 text-3xl font-semibold tabular-nums text-red-300">
+              {(nPrice * 100).toFixed(1)}%
+            </p>
+            <p className="mt-1 text-xs text-zinc-500">
+              {(nPrice * 100).toFixed(0)}¢ per share
             </p>
           </div>
         </div>
-        
-        {/* Show position only for non-admin users */}
-        {!userIsAdmin && (myYes > 0 || myNo > 0) && (
-          <p className="mt-3 text-xs text-zinc-600">
-            Your position: Yes ${(myYes / 100).toFixed(2)} · No ${(myNo / 100).toFixed(2)}
-          </p>
-        )}
-        
-        {/* Show pool info for admin */}
-        {userIsAdmin && (
-          <p className="mt-3 text-xs text-zinc-600">
-            Total pool: ${(total / 100).toFixed(2)} (Yes: ${(totalYes / 100).toFixed(2)}, No: ${(totalNo / 100).toFixed(2)})
-          </p>
-        )}
+
+        {/* Pool and position info */}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-600">
+          <span>Pool: ${(totalPool / 100).toFixed(2)}</span>
+          {!userIsAdmin && (position.yes_shares > 0 || position.no_shares > 0) && (
+            <span>
+              Your position: {position.yes_shares.toFixed(1)} YES / {position.no_shares.toFixed(1)} NO
+            </span>
+          )}
+        </div>
       </Card>
 
-      {/* ADMIN VIEW: Only resolve, no betting */}
-      {userIsAdmin ? (
-        <>
-          {!market.resolved && (
-            <ResolveButtons marketId={marketId} marketTitle={market.title} />
-          )}
-          {market.resolved && (
-            <p className="text-sm text-zinc-600">
-              Resolved{" "}
-              <span
-                className={
-                  market.outcome === "YES"
-                    ? "text-emerald-400 font-medium"
-                    : "text-red-400 font-medium"
-                }
-              >
-                {market.outcome === "YES" ? "YES" : "NO"}
-              </span>{" "}
-              on{" "}
-              {new Date(market.resolved_at).toLocaleDateString()}.
+      {/* Admin: resolve */}
+      {userIsAdmin && !market.resolved && (
+        <ResolveButtons marketId={marketId} marketTitle={market.title} />
+      )}
+
+      {/* User: trade */}
+      {!userIsAdmin && user && !market.resolved && (
+        <TradeForm
+          marketId={marketId}
+          balance={userBalance}
+          yesPrice={yPrice}
+          noPrice={nPrice}
+          position={position}
+        />
+      )}
+
+      {/* Resolved badge */}
+      {market.resolved && (
+        <Card className="text-center">
+          <p className="text-sm text-zinc-400">
+            Resolved{" "}
+            <span
+              className={`text-base font-semibold ${
+                market.outcome === "YES"
+                  ? "text-emerald-400"
+                  : "text-red-400"
+              }`}
+            >
+              {market.outcome}
+            </span>
+          </p>
+          {market.resolved_at && (
+            <p className="mt-1 text-xs text-zinc-600">
+              on {new Date(market.resolved_at).toLocaleDateString()}
             </p>
           )}
-        </>
-      ) : (
-        /* NORMAL USER VIEW: Only betting, no resolve */
-        <>
-          {!market.resolved && user && (
-            <BetForm marketId={marketId} balance={userBalance} />
-          )}
-          {market.resolved && (
-            <p className="text-sm text-zinc-600">
-              Resolved{" "}
-              <span
-                className={
-                  market.outcome === "YES"
-                    ? "text-emerald-400 font-medium"
-                    : "text-red-400 font-medium"
-                }
-              >
-                {market.outcome === "YES" ? "YES" : "NO"}
-              </span>{" "}
-              on{" "}
-              {new Date(market.resolved_at).toLocaleDateString()}.
-            </p>
-          )}
-        </>
+        </Card>
       )}
     </div>
   );

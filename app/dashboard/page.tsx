@@ -5,6 +5,8 @@ import { isAdmin } from "@/lib/admin";
 import { ROUTES } from "@/lib/constants";
 import { Card } from "@/components/ui";
 import Button from "@/components/ui/Button";
+import PositionsList from "./PositionsList";
+import BetHistory from "./BetHistory";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -27,13 +29,11 @@ export default async function DashboardPage() {
 
   // ADMIN VIEW
   if (userIsAdmin) {
-    // Get all channels
     const { data: channels } = await supabase
       .from("channels")
       .select("id, name, description")
       .order("name");
 
-    // Get all markets
     const { data: markets } = await supabase
       .from("markets")
       .select(`
@@ -69,7 +69,6 @@ export default async function DashboardPage() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-2">
-          {/* All Channels */}
           <div>
             <h2 className="mb-4 text-lg font-semibold text-zinc-100">All channels</h2>
             {channels && channels.length > 0 ? (
@@ -97,7 +96,6 @@ export default async function DashboardPage() {
             )}
           </div>
 
-          {/* All Markets */}
           <div>
             <h2 className="mb-4 text-lg font-semibold text-zinc-100">Markets</h2>
             {markets && markets.length > 0 ? (
@@ -175,16 +173,42 @@ export default async function DashboardPage() {
   }
 
   // NORMAL USER VIEW
-  // Get user's bets
+  // Get user's positions (active holdings)
+  const { data: positions } = await supabase
+    .from("positions")
+    .select(`
+      market_id,
+      yes_shares,
+      no_shares,
+      market:markets!inner(
+        id,
+        title,
+        resolved,
+        outcome,
+        yes_pool,
+        no_pool,
+        channel_id,
+        channel:channels!inner(name)
+      )
+    `)
+    .eq("user_id", user.id)
+    .or("yes_shares.gt.0,no_shares.gt.0");
+
+  // Get trade history
   const { data: bets } = await supabase
     .from("bets")
     .select(`
-      *,
-      market:markets(id, title, resolved, outcome)
+      id,
+      side,
+      amount,
+      shares,
+      type,
+      created_at,
+      market:markets!inner(id, title, resolved, outcome)
     `)
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
-    .limit(10);
+    .limit(20);
 
   // Get user's channels
   const { data: memberships } = await supabase
@@ -192,182 +216,82 @@ export default async function DashboardPage() {
     .select("channel:channels(id, name)")
     .eq("user_id", user.id);
 
-  // Get recent markets from joined channels
-  const joinedChannelIds =
-    memberships?.map((m: any) => m.channel?.id).filter(Boolean) ?? [];
-  const { data: joinedMarkets } = joinedChannelIds.length
-    ? await supabase
-        .from("markets")
-        .select("id, title, resolved, outcome, channel_id, channel:channels(name)")
-        .in("channel_id", joinedChannelIds)
-        .order("created_at", { ascending: false })
-        .limit(20)
-    : { data: [] as any[] };
-  const activeJoinedMarkets = (joinedMarkets ?? []).filter((m: any) => !m.resolved);
-  const resolvedJoinedMarkets = (joinedMarkets ?? []).filter((m: any) => m.resolved);
-
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-zinc-100">
+      <div className="mb-8 border-b border-zinc-800/80 pb-6">
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-100">
           Welcome, {displayName}
         </h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Balance: ${((profile?.balance ?? 1000) / 100).toFixed(2)}
+        <p className="mt-2 text-zinc-400">
+          Balance: <span className="font-semibold text-accent">${((profile?.balance ?? 1000) / 100).toFixed(2)}</span>
         </p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* My Channels */}
-        <div>
-          <h2 className="mb-4 text-lg font-semibold text-zinc-100">My channels</h2>
-          {memberships && memberships.length > 0 ? (
-            <ul className="space-y-2">
-              {memberships.map((m: any) => (
-                <li key={m.channel.id}>
-                  <Card className="p-3">
-                    <Link
-                      href={ROUTES.CHANNEL(m.channel.id)}
-                      className="font-medium text-zinc-200 hover:text-white"
-                    >
-                      {m.channel.name}
-                    </Link>
-                  </Card>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <Card className="p-4 text-center">
-              <p className="text-sm text-zinc-500">You haven't joined any channels yet.</p>
-              <Link href={ROUTES.CHANNELS} className="mt-2 inline-block">
-                <Button variant="secondary">Browse channels</Button>
-              </Link>
-            </Card>
-          )}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Main content */}
+        <div className="lg:col-span-2 space-y-8">
+          {/* Active positions */}
+          <section>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-zinc-100">Active Positions</h2>
+            </div>
+            <PositionsList positions={(positions as any) ?? []} />
+          </section>
+
+          {/* Trade history */}
+          <section>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-zinc-100">Trade History</h2>
+            </div>
+            <BetHistory bets={(bets as any) ?? []} />
+          </section>
         </div>
 
-        {/* My Bets */}
-        <div>
-          <h2 className="mb-4 text-lg font-semibold text-zinc-100">Recent bets</h2>
-          {bets && bets.length > 0 ? (
-            <ul className="space-y-2">
-              {bets.map((bet: any) => (
-                <li key={bet.id}>
-                  <Card className="p-3">
-                    <Link
-                      href={ROUTES.MARKET(bet.market_id)}
-                      className="block text-sm font-medium text-zinc-200 hover:text-white"
-                    >
-                      {bet.market?.title || "Market"}
-                    </Link>
-                    <div className="mt-1.5 flex items-center gap-2 text-xs text-zinc-500">
-                      <span
-                        className={`inline-flex rounded px-1.5 py-0.5 font-medium ${
-                          bet.side === "YES"
-                            ? "bg-emerald-500/10 text-emerald-400"
-                            : "bg-red-500/10 text-red-400"
-                        }`}
+        {/* Sidebar */}
+        <div className="space-y-6">
+          {/* My communities */}
+          <section>
+            <h2 className="mb-4 text-lg font-semibold text-zinc-100">My Communities</h2>
+            {memberships && memberships.length > 0 ? (
+              <ul className="space-y-2">
+                {memberships.map((m: any) => (
+                  <li key={m.channel.id}>
+                    <Card className="p-3">
+                      <Link
+                        href={ROUTES.CHANNEL(m.channel.id)}
+                        className="text-sm font-medium text-zinc-200 hover:text-white"
                       >
-                        {bet.side}
-                      </span>
-                      <span>${(bet.amount / 100).toFixed(2)}</span>
-                      {bet.market?.resolved && (
-                        <span
-                          className={`ml-auto font-medium ${
-                            bet.market.outcome === bet.side
-                              ? "text-emerald-400"
-                              : "text-red-400"
-                          }`}
-                        >
-                          {bet.market.outcome === bet.side ? "Won" : "Lost"}
-                        </span>
-                      )}
-                    </div>
-                  </Card>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <Card className="p-4 text-center">
-              <p className="text-sm text-zinc-500">You haven't placed any bets yet.</p>
-              <Link href={ROUTES.CHANNELS} className="mt-2 inline-block">
-                <Button variant="secondary">Find markets</Button>
-              </Link>
+                        {m.channel.name}
+                      </Link>
+                    </Card>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <Card className="p-4 text-center">
+                <p className="text-xs text-zinc-500">No communities yet.</p>
+                <Link href={ROUTES.CHANNELS} className="mt-2 inline-block">
+                  <Button variant="secondary">Browse</Button>
+                </Link>
+              </Card>
+            )}
+          </section>
+
+          {/* Quick actions */}
+          <section>
+            <Card className="p-4">
+              <h3 className="text-sm font-semibold text-zinc-100 mb-3">Quick Actions</h3>
+              <div className="space-y-2">
+                <Link href={ROUTES.CHANNELS} className="block">
+                  <Button variant="secondary" className="w-full justify-start">
+                    Browse Communities
+                  </Button>
+                </Link>
+              </div>
             </Card>
-          )}
+          </section>
         </div>
       </div>
-
-      <section className="mt-8">
-        <h2 className="mb-4 text-lg font-semibold text-zinc-100">Recent markets</h2>
-        {joinedMarkets && joinedMarkets.length > 0 ? (
-          <div className="grid gap-6 md:grid-cols-2">
-            <div>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                Active
-              </h3>
-              {activeJoinedMarkets.length === 0 ? (
-                <p className="text-sm text-zinc-500">No active markets.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {activeJoinedMarkets.map((m: any) => (
-                    <li key={m.id}>
-                      <Card className="p-3">
-                        <Link
-                          href={ROUTES.MARKET(m.id)}
-                          className="block text-sm font-medium text-zinc-200 hover:text-white"
-                        >
-                          {m.title}
-                        </Link>
-                        <div className="mt-1 text-xs text-zinc-600">{m.channel?.name}</div>
-                      </Card>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                Resolved
-              </h3>
-              {resolvedJoinedMarkets.length === 0 ? (
-                <p className="text-sm text-zinc-500">No resolved markets yet.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {resolvedJoinedMarkets.map((m: any) => (
-                    <li key={m.id}>
-                      <Card className="p-3">
-                        <Link
-                          href={ROUTES.MARKET(m.id)}
-                          className="block text-sm font-medium text-zinc-200 hover:text-white"
-                        >
-                          {m.title}
-                        </Link>
-                        <div className="mt-1 text-xs text-zinc-600">
-                          {m.channel?.name}
-                          <span
-                            className={`ml-2 rounded px-1.5 py-0.5 font-medium ${
-                              m.outcome === "YES"
-                                ? "bg-emerald-500/10 text-emerald-400"
-                                : "bg-red-500/10 text-red-400"
-                            }`}
-                          >
-                            {m.outcome}
-                          </span>
-                        </div>
-                      </Card>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        ) : (
-          <Card className="p-4 text-center">
-            <p className="text-sm text-zinc-500">No markets from your channels yet.</p>
-          </Card>
-        )}
-      </section>
     </div>
   );
 }

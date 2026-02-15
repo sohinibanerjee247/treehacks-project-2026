@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Insert market into database
+  // Insert market into database with initial pool of 10,000 shares each (50/50 price)
   const { data: market, error } = await supabase
     .from("markets")
     .insert({
@@ -35,6 +35,8 @@ export async function POST(req: NextRequest) {
       title,
       description: description || null,
       created_by: user.id,
+      yes_pool: 10000,
+      no_pool: 10000,
     })
     .select()
     .single();

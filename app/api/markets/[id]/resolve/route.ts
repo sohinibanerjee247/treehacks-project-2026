@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
 
-/** Resolve a market (admin only). */
+/**
+ * Resolve a market (admin only).
+ * Winning shares pay 100 cents ($1) each. Losing shares pay 0.
+ */
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -29,8 +32,8 @@ export async function POST(
     );
   }
 
-  // Update market and run settlement
-  const { data: market, error: marketError } = await supabase
+  // Mark market as resolved
+  const { error: marketError } = await supabase
     .from("markets")
     .update({
       resolved: true,
@@ -38,69 +41,49 @@ export async function POST(
       resolved_at: new Date().toISOString(),
       resolved_by: user.id,
     })
-    .eq("id", marketId)
-    .select()
-    .single();
+    .eq("id", marketId);
 
   if (marketError) {
     return NextResponse.json({ error: marketError.message }, { status: 500 });
   }
 
-  // Get all bets for this market
-  const { data: bets, error: betsError } = await supabase
-    .from("bets")
-    .select("*")
+  // Get all positions for this market
+  const { data: positions, error: posError } = await supabase
+    .from("positions")
+    .select("user_id, yes_shares, no_shares")
     .eq("market_id", marketId);
 
-  if (betsError) {
-    return NextResponse.json({ error: betsError.message }, { status: 500 });
+  if (posError) {
+    console.error("Failed to get positions:", posError);
+    return NextResponse.json({ error: posError.message }, { status: 500 });
   }
 
-  // Calculate payouts (parimutuel: winning side shares the pool)
-  const totalYes = bets
-    ?.filter((b) => b.side === "YES")
-    .reduce((sum, b) => sum + b.amount, 0) || 0;
-  const totalNo = bets
-    ?.filter((b) => b.side === "NO")
-    .reduce((sum, b) => sum + b.amount, 0) || 0;
-  const pool = totalYes + totalNo;
-  const totalWinning = outcome === "YES" ? totalYes : totalNo;
+  // Pay out: each winning share = 100 cents ($1)
+  const payouts: { user_id: string; payout: number }[] = [];
 
-  if (totalWinning === 0 || pool === 0) {
-    return NextResponse.json({ ok: true, marketId, outcome, payouts: [] });
-  }
+  for (const pos of positions ?? []) {
+    const winningShares =
+      outcome === "YES" ? pos.yes_shares : pos.no_shares;
 
-  // Calculate each winner's payout and update balances
-  const winners = bets?.filter((b) => b.side === outcome) || [];
-  const payouts = [];
+    if (winningShares <= 0) continue;
 
-  for (const bet of winners) {
-    const share = bet.amount / totalWinning;
-    const payout = Math.floor(share * pool);
-    
-    // Update user balance
-    const { error: updateError } = await supabase.rpc("increment_balance", {
-      user_id: bet.user_id,
-      amount: payout,
-    });
+    const payout = Math.floor(winningShares * 100); // $1 per share in cents
 
-    // If RPC doesn't exist, use update directly
-    if (updateError) {
-      const { data: profile } = await supabase
+    // Get current balance
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("balance")
+      .eq("id", pos.user_id)
+      .single();
+
+    if (profile) {
+      await supabase
         .from("profiles")
-        .select("balance")
-        .eq("id", bet.user_id)
-        .single();
-
-      if (profile) {
-        await supabase
-          .from("profiles")
-          .update({ balance: profile.balance + payout })
-          .eq("id", bet.user_id);
-      }
+        .update({ balance: profile.balance + payout })
+        .eq("id", pos.user_id);
     }
 
-    payouts.push({ user_id: bet.user_id, payout });
+    payouts.push({ user_id: pos.user_id, payout });
   }
 
   return NextResponse.json({ ok: true, marketId, outcome, payouts });

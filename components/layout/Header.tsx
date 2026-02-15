@@ -15,15 +15,15 @@ export default async function Header({
   const { data: { user } } = await supabase.auth.getUser();
   const userIsAdmin = await isAdmin();
 
-  // Get user balance from profiles
-  let balance = 1000;
+  // Get user balance from profiles (in cents)
+  let balance = 100000; // Default $1000
   if (user) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("balance")
       .eq("id", user.id)
       .single();
-    balance = profile?.balance ?? 1000;
+    balance = profile?.balance ?? 100000;
   }
 
   return (

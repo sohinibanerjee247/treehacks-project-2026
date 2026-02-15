@@ -1,23 +1,40 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Button from "@/components/ui/Button";
 
-type Props = { channelId: string };
+type Props = {
+  channelId: string;
+  joined: boolean;
+};
 
-export default function JoinButton({ channelId }: Props) {
+export default function JoinButton({ channelId, joined: initialJoined }: Props) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [joined, setJoined] = useState(initialJoined);
   const [loading, setLoading] = useState(false);
 
-  async function handleJoin() {
+  const busy = loading || isPending;
+
+  async function handleToggle() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/channels/${channelId}/join`, {
-        method: "POST",
-      });
+      const endpoint = joined
+        ? `/api/channels/${channelId}/leave`
+        : `/api/channels/${channelId}/join`;
+
+      const res = await fetch(endpoint, { method: "POST" });
       if (res.ok) {
-        router.refresh();
+        // Optimistically flip the state
+        setJoined(!joined);
+        // Then refresh server data in the background
+        startTransition(() => {
+          router.refresh();
+        });
+      } else {
+        const data = await res.json();
+        console.error("Channel action failed:", data.error);
       }
     } finally {
       setLoading(false);
@@ -25,8 +42,14 @@ export default function JoinButton({ channelId }: Props) {
   }
 
   return (
-    <Button variant="secondary" onClick={handleJoin} disabled={loading}>
-      {loading ? "Joining..." : "Join"}
+    <Button
+      variant={joined ? "ghost" : "secondary"}
+      onClick={handleToggle}
+      disabled={busy}
+    >
+      {busy
+        ? joined ? "Leaving..." : "Joining..."
+        : joined ? "Leave" : "Join"}
     </Button>
   );
 }

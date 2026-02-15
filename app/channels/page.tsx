@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
-import { Card } from "@/components/ui";
-import JoinButton from "./JoinButton";
+import { ROUTES } from "@/lib/constants";
+import ChannelSearch from "./ChannelSearch";
 
 export default async function ChannelsPage() {
   const supabase = await createClient();
@@ -15,6 +15,20 @@ export default async function ChannelsPage() {
     .select("id, name, description")
     .order("name");
 
+  // Get member counts
+  const channelIds = channels?.map((c) => c.id) ?? [];
+  const { data: allMembers } = channelIds.length
+    ? await supabase
+        .from("channel_members")
+        .select("channel_id")
+        .in("channel_id", channelIds)
+    : { data: [] };
+
+  const memberCounts: Record<string, number> = {};
+  allMembers?.forEach((m) => {
+    memberCounts[m.channel_id] = (memberCounts[m.channel_id] || 0) + 1;
+  });
+
   // Get user's memberships (only for non-admin)
   let memberChannelIds: string[] = [];
   if (user && !userIsAdmin) {
@@ -25,52 +39,35 @@ export default async function ChannelsPage() {
     memberChannelIds = memberships?.map((m) => m.channel_id) || [];
   }
 
+  // Build channel list for the client component
+  const channelList = (channels ?? []).map((ch) => ({
+    id: ch.id,
+    name: ch.name,
+    description: ch.description,
+    joined: memberChannelIds.includes(ch.id),
+    memberCount: memberCounts[ch.id] || 0,
+  }));
+
   return (
     <div>
       <p className="mb-6">
-        <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-400">
-          ← Home
+        <Link href={ROUTES.DASHBOARD} className="text-sm text-zinc-500 hover:text-zinc-400">
+          ← Dashboard
         </Link>
       </p>
-      <p className="text-zinc-500 text-[15px]">
-        {userIsAdmin ? "All channels." : "Join a channel to see and bet on its markets."}
+
+      <h1 className="text-2xl font-semibold text-zinc-100">Communities</h1>
+      <p className="mt-2 text-sm text-zinc-500">
+        {userIsAdmin
+          ? "All channels."
+          : "Join a community to see its markets and start betting."}
       </p>
-      <ul className="mt-8 space-y-2">
-        {channels?.map((ch) => {
-          const joined = memberChannelIds.includes(ch.id);
-          return (
-            <li key={ch.id}>
-              <Card className="p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <Link
-                      href={`/channels/${ch.id}`}
-                      className="font-medium text-zinc-200 hover:text-white"
-                    >
-                      {ch.name}
-                    </Link>
-                    {ch.description && (
-                      <p className="mt-0.5 text-xs text-zinc-600">
-                        {ch.description}
-                      </p>
-                    )}
-                  </div>
-                  {!userIsAdmin && (
-                    joined ? (
-                      <span className="text-xs font-medium text-emerald-400">Joined</span>
-                    ) : (
-                      <JoinButton channelId={ch.id} />
-                    )
-                  )}
-                </div>
-              </Card>
-            </li>
-          );
-        })}
-        {!channels || channels.length === 0 ? (
-          <p className="text-sm text-zinc-500">No channels yet.</p>
-        ) : null}
-      </ul>
+
+      <ChannelSearch
+        channels={channelList}
+        showJoin={!userIsAdmin && !!user}
+        showSignIn={!user}
+      />
     </div>
   );
 }
