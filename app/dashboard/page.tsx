@@ -9,6 +9,9 @@ import BetHistory from "./BetHistory";
 import PendingOrders from "./PendingOrders";
 import SuccessBanner from "./SuccessBanner";
 
+// Force dynamic rendering — user-specific data changes frequently
+export const dynamic = "force-dynamic";
+
 type Props = {
   searchParams?: { trade_success?: string };
 };

@@ -1,17 +1,22 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/admin";
 import { Card } from "@/components/ui";
 import { ROUTES } from "@/lib/constants";
 import RenameChannelButton from "./RenameChannelButton";
 import JoinButton from "../JoinButton";
 
+// Force dynamic rendering — market odds change with bets/orders
+export const dynamic = "force-dynamic";
+
 type Props = { params: { id: string } };
 
 export default async function ChannelPage({ params }: Props) {
   const { id: channelId } = params;
   const supabase = await createClient();
+  const admin = createAdminClient();
   const { data: { user } } = await supabase.auth.getUser();
   const userIsAdmin = await isAdmin();
 
@@ -62,26 +67,44 @@ export default async function ChannelPage({ params }: Props) {
     .eq("channel_id", channelId)
     .order("created_at", { ascending: false });
 
-  // Get recent bets to calculate market sentiment
+  // Get bets + orders to calculate market sentiment (interest = bets + resting orders)
   const marketIds = markets?.map((m) => m.id) ?? [];
+  // IMPORTANT: odds must be consistent across users.
+  // Bets/orders may be RLS-protected, so compute aggregates via admin client.
   const { data: bets } = marketIds.length
-    ? await supabase
+    ? await admin
         .from("bets")
         .select("market_id, side, amount")
         .in("market_id", marketIds)
-        .order("created_at", { ascending: false })
     : { data: [] as any[] };
 
-  // Calculate odds from recent trade distribution
+  const { data: orders } = marketIds.length
+    ? await admin
+        .from("orders")
+        .select("market_id, side, amount, filled_amount, status")
+        .in("market_id", marketIds)
+        .in("status", ["pending", "filled"])
+    : { data: [] as any[] };
+
+  // Calculate odds from total market interest (bets + pending orders)
   const marketOdds = markets?.map((m) => {
-    const marketBets = (bets ?? []).filter((b: any) => b.market_id === m.id);
-    const yesCount = marketBets.filter((b: any) => b.side === "YES").length;
-    const noCount = marketBets.filter((b: any) => b.side === "NO").length;
-    const total = yesCount + noCount;
-    
-    const yesPercent = total > 0 ? (yesCount / total) * 100 : 50;
-    const noPercent = total > 0 ? (noCount / total) * 100 : 50;
-    const totalVolume = marketBets.reduce((sum: number, b: any) => sum + (b.amount ?? 0), 0);
+    const mBets = (bets ?? []).filter((b: any) => b.market_id === m.id);
+    const mOrders = (orders ?? []).filter((o: any) => o.market_id === m.id);
+
+    const betYes = mBets.filter((b: any) => b.side === "YES").reduce((s: number, b: any) => s + (b.amount ?? 0), 0);
+    const betNo = mBets.filter((b: any) => b.side === "NO").reduce((s: number, b: any) => s + (b.amount ?? 0), 0);
+    const pendYes = mOrders.filter((o: any) => o.side === "YES" && o.status === "pending")
+      .reduce((s: number, o: any) => s + ((o.amount ?? 0) - (o.filled_amount ?? 0)), 0);
+    const pendNo = mOrders.filter((o: any) => o.side === "NO" && o.status === "pending")
+      .reduce((s: number, o: any) => s + ((o.amount ?? 0) - (o.filled_amount ?? 0)), 0);
+
+    const totalYes = betYes + pendYes;
+    const totalNo = betNo + pendNo;
+    const totalInterest = totalYes + totalNo;
+
+    const yesPercent = totalInterest > 0 ? (totalYes / totalInterest) * 100 : 50;
+    const noPercent = totalInterest > 0 ? (totalNo / totalInterest) * 100 : 50;
+    const totalVolume = mBets.reduce((s: number, b: any) => s + (b.amount ?? 0), 0);
     
     return {
       ...m,

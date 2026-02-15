@@ -23,6 +23,51 @@ export default function CreateMarketForm({ channels }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // AI generation state
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  function toLocalDatetime(iso: string) {
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
+      // Format as YYYY-MM-DDTHH:mm for datetime-local input
+      return d.toISOString().slice(0, 16);
+    } catch {
+      return "";
+    }
+  }
+
+  async function handleAiGenerate() {
+    if (!aiPrompt.trim()) return;
+    setAiError(null);
+    setAiLoading(true);
+    try {
+      const res = await fetch("/api/ai/generate-market", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: aiPrompt.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAiError(data.error ?? "AI generation failed");
+        return;
+      }
+      // Fill in the form with AI-generated data
+      setTitle(data.title || "");
+      setDescription(data.description || "");
+      setRules(data.rules || "");
+      setResolutionSource(data.resolutionSource || "");
+      setCloseTime(toLocalDatetime(data.closeTime));
+      setExpectedResolutionTime(toLocalDatetime(data.expectedResolutionTime));
+    } catch (err: any) {
+      setAiError(err.message ?? "Something went wrong");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -54,7 +99,43 @@ export default function CreateMarketForm({ channels }: Props) {
   }
 
   return (
-    <Card className="mt-6">
+    <div className="mt-6 space-y-4">
+      {/* AI Generation Section */}
+      <Card>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-lg">&#x2728;</span>
+          <h2 className="text-sm font-semibold text-zinc-200">AI Market Generator</h2>
+        </div>
+        <p className="text-xs text-zinc-500 mb-3">
+          Describe a question in plain English and let AI generate a complete market.
+        </p>
+        <div className="flex gap-2">
+          <input
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.target.value)}
+            placeholder='e.g. "will it snow in Evanston this week?"'
+            className="flex-1 rounded-md border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/50"
+            disabled={aiLoading}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleAiGenerate();
+              }
+            }}
+          />
+          <Button
+            type="button"
+            variant="primary"
+            onClick={handleAiGenerate}
+            disabled={aiLoading || !aiPrompt.trim()}
+          >
+            {aiLoading ? "Generating..." : "Generate"}
+          </Button>
+        </div>
+        {aiError && <p className="mt-2 text-sm text-red-400">{aiError}</p>}
+      </Card>
+
+      <Card>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
           <label className="mb-1 block text-xs font-medium text-zinc-500">
@@ -155,6 +236,7 @@ export default function CreateMarketForm({ channels }: Props) {
           {loading ? "Creating…" : "Create market"}
         </Button>
       </form>
-    </Card>
+      </Card>
+    </div>
   );
 }
