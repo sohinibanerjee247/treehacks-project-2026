@@ -2,9 +2,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
 import { ROUTES } from "@/lib/constants";
-import CreateMarketForm from "./CreateMarketForm";
+import CreateChannelForm from "./CreateChannelForm";
 
-export default async function CreateMarketPage() {
+export default async function CreateChannelPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -16,12 +16,6 @@ export default async function CreateMarketPage() {
     redirect(ROUTES.DASHBOARD);
   }
 
-  // Fetch channels from database
-  const { data: channels } = await supabase
-    .from("channels")
-    .select("id, name")
-    .order("name");
-
   return (
     <div className="mx-auto max-w-xl">
       <p className="mb-6">
@@ -32,11 +26,11 @@ export default async function CreateMarketPage() {
           ← Dashboard
         </a>
       </p>
-      <h1 className="text-xl font-semibold text-zinc-100">Create market</h1>
+      <h1 className="text-xl font-semibold text-zinc-100">Create channel</h1>
       <p className="mt-1 text-sm text-zinc-500">
-        Only admins can create markets. This will appear in the chosen channel.
+        Only admins can create channels. Users will be able to join and see markets in this channel.
       </p>
-      <CreateMarketForm channels={channels || []} />
+      <CreateChannelForm />
     </div>
   );
 }

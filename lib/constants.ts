@@ -9,4 +9,5 @@ export const ROUTES = {
   CHANNEL: (id: string) => `/channels/${id}`,
   MARKET: (id: string) => `/markets/${id}`,
   ADMIN_CREATE_MARKET: "/admin/create-market",
+  ADMIN_CREATE_CHANNEL: "/admin/create-channel",
 } as const;

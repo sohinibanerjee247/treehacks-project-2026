@@ -86,24 +86,17 @@ export default function UserMenu({ user, balance = 1000, isAdmin = false }: Prop
               onClick={() => setOpen(false)}
               className="flex w-full items-center px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800/50 transition-colors"
             >
-              Dashboard
+              {isAdmin ? "Admin Dashboard" : "Dashboard"}
             </Link>
-            {isAdmin && (
+            {!isAdmin && (
               <Link
-                href={ROUTES.ADMIN_CREATE_MARKET}
+                href={ROUTES.CHANNELS}
                 onClick={() => setOpen(false)}
                 className="flex w-full items-center px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800/50 transition-colors"
               >
-                Create market
+                Communities
               </Link>
             )}
-            <Link
-              href={ROUTES.CHANNELS}
-              onClick={() => setOpen(false)}
-              className="flex w-full items-center px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800/50 transition-colors"
-            >
-              Communities
-            </Link>
           </div>
           <div className="border-t border-zinc-800 py-1">
             <button

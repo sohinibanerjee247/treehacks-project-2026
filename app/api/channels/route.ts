@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
 
-/** Create a market (admin only). */
+/** Create a channel (admin only). */
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -16,23 +16,21 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const channelId = String(body.channelId ?? "").trim();
-  const title = String(body.title ?? "").trim();
+  const name = String(body.name ?? "").trim();
   const description = String(body.description ?? "").trim();
 
-  if (!channelId || !title) {
+  if (!name) {
     return NextResponse.json(
-      { error: "channelId and title required" },
+      { error: "name required" },
       { status: 400 }
     );
   }
 
-  // Insert market into database
-  const { data: market, error } = await supabase
-    .from("markets")
+  // Insert channel into database
+  const { data: channel, error } = await supabase
+    .from("channels")
     .insert({
-      channel_id: channelId,
-      title,
+      name,
       description: description || null,
       created_by: user.id,
     })
@@ -43,5 +41,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(market, { status: 201 });
+  return NextResponse.json(channel, { status: 201 });
 }
