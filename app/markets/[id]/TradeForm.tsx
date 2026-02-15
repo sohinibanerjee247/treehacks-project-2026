@@ -28,16 +28,8 @@ export default function TradeForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-
   const currentPrice = side === "YES" ? yesPrice : noPrice;
-  const sharesHeld =
-    side === "YES" ? position.yes_shares : position.no_shares;
-
-  // Estimate: for buy, amount is dollars. For sell, amount is shares.
-  const estimatedShares =
-    action === "buy" ? (amount * 100) / (currentPrice * 100 || 1) : 0;
-  const estimatedPayout =
-    action === "sell" ? amount * currentPrice * 100 : 0;
+  const unitsHeld = side === "YES" ? position.yes_shares : position.no_shares;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -48,8 +40,8 @@ export default function TradeForm({
     try {
       const body =
         action === "buy"
-          ? { action, side, amount: Math.round(amount * 100) } // dollars to cents
-          : { action, side, amount }; // shares
+          ? { action, side, amount: Math.round(amount * 100) }
+          : { action, side, amount };
 
       const res = await fetch(`/api/markets/${marketId}/trade`, {
         method: "POST",
@@ -64,12 +56,12 @@ export default function TradeForm({
         return;
       }
 
-      const sharesStr = data.shares.toFixed(2);
-      const costStr = (data.cost / 100).toFixed(2);
+      const costStr = ((data.cost ?? Math.round(amount * 100)) / 100).toFixed(2);
       if (action === "buy") {
-        setSuccess(`Bought ${sharesStr} ${side} shares for $${costStr}`);
+        setSuccess(`Placed $${costStr} on ${side}.`);
       } else {
-        setSuccess(`Sold ${sharesStr} ${side} shares for $${costStr}`);
+        const unitsStr = Number(data.units ?? amount).toFixed(2);
+        setSuccess(`Reduced ${side} by ${unitsStr} units and received $${costStr}.`);
       }
       router.refresh();
     } finally {
@@ -85,18 +77,18 @@ export default function TradeForm({
         </p>
         {(position.yes_shares > 0 || position.no_shares > 0) && (
           <p className="text-xs text-zinc-500">
-            Position: {position.yes_shares.toFixed(1)} YES /{" "}
+            Exposure: {position.yes_shares.toFixed(1)} YES /{" "}
             {position.no_shares.toFixed(1)} NO
           </p>
         )}
       </div>
 
-      {/* Action toggle */}
       <div className="mb-4 flex rounded-lg bg-zinc-800/50 p-1">
         <button
           type="button"
           onClick={() => {
             setAction("buy");
+            setAmount(10);
             setError(null);
             setSuccess(null);
           }}
@@ -112,6 +104,7 @@ export default function TradeForm({
           type="button"
           onClick={() => {
             setAction("sell");
+            setAmount(Number(unitsHeld.toFixed(2)));
             setError(null);
             setSuccess(null);
           }}
@@ -143,7 +136,6 @@ export default function TradeForm({
             >
               <div>YES</div>
               <div className="text-lg font-semibold">{(yesPrice * 100).toFixed(1)}%</div>
-              <div className="text-xs text-zinc-500">{(yesPrice * 100).toFixed(0)}¢/share</div>
             </button>
             <button
               type="button"
@@ -156,7 +148,6 @@ export default function TradeForm({
             >
               <div>NO</div>
               <div className="text-lg font-semibold">{(noPrice * 100).toFixed(1)}%</div>
-              <div className="text-xs text-zinc-500">{(noPrice * 100).toFixed(0)}¢/share</div>
             </button>
           </div>
         </div>
@@ -164,27 +155,22 @@ export default function TradeForm({
         {/* Amount */}
         <div>
           <label className="mb-1 block text-xs font-medium text-zinc-500">
-            {action === "buy" ? "Amount ($)" : `Shares to sell (have ${sharesHeld.toFixed(2)})`}
+            {action === "buy" ? "Amount ($)" : `Units to sell (have ${unitsHeld.toFixed(2)})`}
           </label>
           <Input
             type="number"
             min={action === "buy" ? 1 : 0.01}
-            max={action === "sell" ? sharesHeld : undefined}
+            max={action === "sell" ? unitsHeld : undefined}
             step={action === "buy" ? 1 : 0.01}
             value={amount}
             onChange={(e) => setAmount(Number(e.target.value))}
             disabled={loading}
           />
-          {action === "buy" && amount > 0 && (
-            <p className="mt-1 text-xs text-zinc-600">
-              ≈ {estimatedShares.toFixed(2)} {side} shares
-            </p>
-          )}
-          {action === "sell" && amount > 0 && (
-            <p className="mt-1 text-xs text-zinc-600">
-              ≈ ${(estimatedPayout / 100).toFixed(2)} payout
-            </p>
-          )}
+          <p className="mt-1 text-xs text-zinc-600">
+            {action === "buy"
+              ? `You are betting on ${side}.`
+              : `Estimated payout: $${(Math.max(0, amount) * currentPrice).toFixed(2)}`}
+          </p>
         </div>
 
         {error && <p className="text-sm text-red-400">{error}</p>}
@@ -194,12 +180,12 @@ export default function TradeForm({
           type="submit"
           variant="primary"
           className="w-full"
-          disabled={loading || (action === "sell" && sharesHeld <= 0)}
+          disabled={loading || (action === "sell" && unitsHeld <= 0)}
         >
           {loading
             ? "Processing..."
             : action === "buy"
-              ? `Buy ${side}`
+              ? `Place ${side} Bet`
               : `Sell ${side}`}
         </Button>
       </form>

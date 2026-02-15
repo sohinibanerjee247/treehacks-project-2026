@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
       description,
       rules,
       resolution_source: resolutionSource,
+      open_time: new Date().toISOString(),
       close_time: close.toISOString(),
       expected_resolution_time: expected.toISOString(),
       created_by: user.id,

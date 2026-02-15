@@ -29,7 +29,7 @@ export default function PositionsList({ positions }: Props) {
   if (!positions || positions.length === 0) {
     return (
       <Card className="p-8 text-center">
-        <p className="text-sm text-zinc-500">No active positions.</p>
+        <p className="text-sm text-zinc-500">No active bets.</p>
         <Link href={ROUTES.CHANNELS} className="mt-2 inline-block text-sm text-accent hover:text-accent-hover">
           Browse markets
         </Link>
@@ -40,8 +40,8 @@ export default function PositionsList({ positions }: Props) {
   return (
     <ul className="space-y-2">
       {positions.map((pos) => {
-        const yp = pos.market.yes_pool ?? 10000;
-        const np = pos.market.no_pool ?? 10000;
+        const yp = (pos.market.yes_pool ?? 0) > 0 ? pos.market.yes_pool : 10000;
+        const np = (pos.market.no_pool ?? 0) > 0 ? pos.market.no_pool : 10000;
         const total = yp + np;
         const yesPrice = np / total;
         const noPrice = yp / total;
@@ -69,12 +69,12 @@ export default function PositionsList({ positions }: Props) {
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                 {pos.yes_shares > 0 && (
                   <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-medium text-emerald-400">
-                    {pos.yes_shares.toFixed(1)} YES
+                    YES stake: {pos.yes_shares.toFixed(1)}
                   </span>
                 )}
                 {pos.no_shares > 0 && (
                   <span className="rounded bg-red-500/10 px-1.5 py-0.5 font-medium text-red-400">
-                    {pos.no_shares.toFixed(1)} NO
+                    NO stake: {pos.no_shares.toFixed(1)}
                   </span>
                 )}
 

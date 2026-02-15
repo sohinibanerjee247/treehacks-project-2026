@@ -201,7 +201,6 @@ export default async function DashboardPage() {
       id,
       side,
       amount,
-      shares,
       type,
       created_at,
       market:markets!inner(id, title, resolved, outcome)
@@ -230,10 +229,10 @@ export default async function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main content */}
         <div className="lg:col-span-2 space-y-8">
-          {/* Active positions */}
+          {/* Active bets */}
           <section>
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-zinc-100">Active Positions</h2>
+              <h2 className="text-xl font-semibold text-zinc-100">Active Bets</h2>
             </div>
             <PositionsList positions={(positions as any) ?? []} />
           </section>

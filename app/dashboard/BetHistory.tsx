@@ -8,7 +8,6 @@ type Bet = {
   id: string;
   side: string;
   amount: number;
-  shares: number;
   type: string;
   created_at: string;
   market: {
@@ -53,7 +52,7 @@ export default function BetHistory({ bets }: Props) {
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                 {/* Action type */}
                 <span className="rounded bg-zinc-800 px-1.5 py-0.5 font-medium text-zinc-400">
-                  {bet.type === "buy" ? "Bought" : "Sold"}
+                  {bet.type === "sell" ? "Reduced" : "Placed"}
                 </span>
 
                 {/* Side */}
@@ -67,9 +66,9 @@ export default function BetHistory({ bets }: Props) {
                   {bet.side}
                 </span>
 
-                {/* Shares and cost */}
+                {/* Amount */}
                 <span className="text-zinc-500">
-                  {bet.shares.toFixed(2)} shares · ${(bet.amount / 100).toFixed(2)}
+                  ${(bet.amount / 100).toFixed(2)}
                 </span>
 
                 {/* Status */}

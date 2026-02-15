@@ -80,13 +80,15 @@ export default async function ChannelPage({ params }: Props) {
     const noPercent = total > 0 ? (yp / total) * 100 : 50;
     const visiblePool = (bets ?? [])
       .filter((b: any) => b.market_id === m.id)
-      .filter((b: any) => b.type !== "sell")
-      .reduce((sum: number, b: any) => sum + (b.amount ?? 0), 0);
+      .reduce((sum: number, b: any) => {
+        const delta = b.type === "sell" ? -(b.amount ?? 0) : (b.amount ?? 0);
+        return sum + delta;
+      }, 0);
     return {
       ...m,
       yesOdds: yesPercent,
       noOdds: noPercent,
-      totalPool: visiblePool,
+      totalPool: Math.max(0, visiblePool),
     };
   });
 

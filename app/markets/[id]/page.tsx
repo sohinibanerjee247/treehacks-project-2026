@@ -43,15 +43,17 @@ export default async function MarketPage({ params }: Props) {
     .from("bets")
     .select("amount, type")
     .eq("market_id", marketId);
-  // Visible pool = real money bet by users (exclude sell records)
+  // Visible pool = net dollars currently at risk in this market.
   const visiblePool = (bets ?? [])
-    .filter((b: any) => b.type !== "sell")
-    .reduce((sum: number, b: any) => sum + (b.amount ?? 0), 0);
+    .reduce((sum: number, b: any) => {
+      const delta = b.type === "sell" ? -(b.amount ?? 0) : (b.amount ?? 0);
+      return sum + delta;
+    }, 0);
 
   // Get current user
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Get user position and balance
+  // Get user exposure and balance
   let userBalance = 0;
   let position = { yes_shares: 0, no_shares: 0 };
 
@@ -104,9 +106,6 @@ export default async function MarketPage({ params }: Props) {
             <p className="mt-1 text-3xl font-semibold tabular-nums text-emerald-300">
               {(yPrice * 100).toFixed(1)}%
             </p>
-            <p className="mt-1 text-xs text-zinc-500">
-              {(yPrice * 100).toFixed(0)}¢ per share
-            </p>
           </div>
           <div className="rounded-lg border border-red-500/20 bg-red-500/5 py-4 text-center">
             <p className="text-[11px] uppercase tracking-wider text-red-400">
@@ -115,18 +114,15 @@ export default async function MarketPage({ params }: Props) {
             <p className="mt-1 text-3xl font-semibold tabular-nums text-red-300">
               {(nPrice * 100).toFixed(1)}%
             </p>
-            <p className="mt-1 text-xs text-zinc-500">
-              {(nPrice * 100).toFixed(0)}¢ per share
-            </p>
           </div>
         </div>
 
-        {/* Pool and position info */}
+        {/* Pool and exposure info */}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-600">
-          <span>Pool: ${(visiblePool / 100).toFixed(2)}</span>
+          <span>Pool: ${(Math.max(0, visiblePool) / 100).toFixed(2)}</span>
           {!userIsAdmin && (position.yes_shares > 0 || position.no_shares > 0) && (
             <span>
-              Your position: {position.yes_shares.toFixed(1)} YES / {position.no_shares.toFixed(1)} NO
+              Your exposure: {position.yes_shares.toFixed(1)} YES / {position.no_shares.toFixed(1)} NO
             </span>
           )}
         </div>

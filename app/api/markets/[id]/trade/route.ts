@@ -7,7 +7,7 @@ import { buyYes, buyNo, sellYes, sellNo } from "@/lib/market";
  * POST /api/markets/[id]/trade
  * Body: { action: "buy" | "sell", side: "YES" | "NO", amount: number }
  *   - For buy:  `amount` is cents to spend
- *   - For sell: `amount` is number of shares to sell
+ *   - For sell: `amount` is position units to reduce
  */
 export async function POST(
   req: NextRequest,
@@ -47,14 +47,14 @@ export async function POST(
       { status: 400 }
     );
   }
-  if (amount <= 0) {
+  if (!Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ error: "amount must be > 0" }, { status: 400 });
   }
 
   // Get market
   const { data: market, error: marketError } = await supabase
     .from("markets")
-    .select("id, resolved, yes_pool, no_pool")
+    .select("id, resolved, close_time, yes_pool, no_pool")
     .eq("id", marketId)
     .single();
 
@@ -62,6 +62,9 @@ export async function POST(
     return NextResponse.json({ error: "Market not found" }, { status: 404 });
   }
   if (market.resolved) {
+    return NextResponse.json({ error: "Market is closed" }, { status: 400 });
+  }
+  if (market.close_time && new Date(market.close_time).getTime() <= Date.now()) {
     return NextResponse.json({ error: "Market is closed" }, { status: 400 });
   }
 
@@ -93,7 +96,7 @@ export async function POST(
 
   let newYesPool: number;
   let newNoPool: number;
-  let sharesChange: number;
+  let unitsChange: number;
   let balanceChange: number; // positive = user gains money, negative = user pays
   let newYesShares: number;
   let newNoShares: number;
@@ -116,53 +119,53 @@ export async function POST(
 
     if (side === "YES") {
       const result = buyYes(effectiveYesPool, effectiveNoPool, cost);
-      sharesChange = result.shares;
+      unitsChange = result.shares;
       newYesPool = result.yesPool;
       newNoPool = result.noPool;
-      newYesShares = currentYesShares + sharesChange;
+      newYesShares = currentYesShares + unitsChange;
       newNoShares = currentNoShares;
     } else {
       const result = buyNo(effectiveYesPool, effectiveNoPool, cost);
-      sharesChange = result.shares;
+      unitsChange = result.shares;
       newYesPool = result.yesPool;
       newNoPool = result.noPool;
       newYesShares = currentYesShares;
-      newNoShares = currentNoShares + sharesChange;
+      newNoShares = currentNoShares + unitsChange;
     }
     balanceChange = -cost;
   } else {
     // action === "sell"
-    // amount = shares to sell
+    // amount = position units to reduce
     if (side === "YES") {
       if (currentYesShares < amount) {
         return NextResponse.json(
           {
-            error: `You only have ${currentYesShares.toFixed(2)} YES shares`,
+            error: `You only have ${currentYesShares.toFixed(2)} YES units`,
           },
           { status: 400 }
         );
       }
       const result = sellYes(effectiveYesPool, effectiveNoPool, amount);
-      sharesChange = amount;
+      unitsChange = amount;
       newYesPool = result.yesPool;
       newNoPool = result.noPool;
       balanceChange = Math.floor(result.payout);
-      newYesShares = currentYesShares - sharesChange;
+      newYesShares = currentYesShares - unitsChange;
       newNoShares = currentNoShares;
     } else {
       if (currentNoShares < amount) {
         return NextResponse.json(
-          { error: `You only have ${currentNoShares.toFixed(2)} NO shares` },
+          { error: `You only have ${currentNoShares.toFixed(2)} NO units` },
           { status: 400 }
         );
       }
       const result = sellNo(effectiveYesPool, effectiveNoPool, amount);
-      sharesChange = amount;
+      unitsChange = amount;
       newYesPool = result.yesPool;
       newNoPool = result.noPool;
       balanceChange = Math.floor(result.payout);
       newYesShares = currentYesShares;
-      newNoShares = currentNoShares - sharesChange;
+      newNoShares = currentNoShares - unitsChange;
     }
   }
 
@@ -224,7 +227,6 @@ export async function POST(
     market_id: marketId,
     side,
     amount: Math.abs(balanceChange),
-    shares: sharesChange,
     type: action,
   });
 
@@ -232,7 +234,7 @@ export async function POST(
     ok: true,
     action,
     side,
-    shares: sharesChange,
+    units: unitsChange,
     cost: Math.abs(balanceChange),
     newBalance: profile.balance + balanceChange,
     position: { yes_shares: newYesShares, no_shares: newNoShares },

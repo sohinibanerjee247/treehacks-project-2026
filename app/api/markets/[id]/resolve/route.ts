@@ -4,7 +4,7 @@ import { isAdmin } from "@/lib/admin";
 
 /**
  * Resolve a market (admin only).
- * Winning shares pay 100 cents ($1) each. Losing shares pay 0.
+ * Winning YES/NO units pay 100 cents ($1) each. Losing units pay 0.
  */
 export async function POST(
   req: NextRequest,
@@ -30,6 +30,19 @@ export async function POST(
       { error: "outcome must be 'yes' or 'no'" },
       { status: 400 }
     );
+  }
+
+  const { data: market, error: marketFetchError } = await supabase
+    .from("markets")
+    .select("id, resolved")
+    .eq("id", marketId)
+    .single();
+
+  if (marketFetchError || !market) {
+    return NextResponse.json({ error: "Market not found" }, { status: 404 });
+  }
+  if (market.resolved) {
+    return NextResponse.json({ error: "Market is already resolved" }, { status: 400 });
   }
 
   // Mark market as resolved
@@ -58,16 +71,16 @@ export async function POST(
     return NextResponse.json({ error: posError.message }, { status: 500 });
   }
 
-  // Pay out: each winning share = 100 cents ($1)
+  // Pay out: each winning unit = 100 cents ($1)
   const payouts: { user_id: string; payout: number }[] = [];
 
   for (const pos of positions ?? []) {
-    const winningShares =
+    const winningUnits =
       outcome === "YES" ? pos.yes_shares : pos.no_shares;
 
-    if (winningShares <= 0) continue;
+    if (winningUnits <= 0) continue;
 
-    const payout = Math.floor(winningShares * 100); // $1 per share in cents
+    const payout = Math.floor(winningUnits * 100);
 
     // Get current balance
     const { data: profile } = await supabase
