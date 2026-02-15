@@ -10,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Micro Prediction Market",
+  title: "mic",
   description: "Bet on stuff with play money",
 };
 

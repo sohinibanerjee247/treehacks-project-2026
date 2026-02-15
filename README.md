@@ -1,4 +1,4 @@
-# Micro Prediction Market
+# mic
 
 Minimal frontend (Next.js, React, TypeScript, Tailwind). Backend and database to be added later.
 

@@ -51,12 +51,17 @@ export default async function MarketPage({ params }: Props) {
     .eq("market_id", marketId)
     .order("created_at", { ascending: true });
 
-  // Get ALL orders (pending + filled) — resting orders reflect market interest
+  const interestStatuses = market.resolved
+    ? ["pending", "filled", "cancelled"]
+    : ["pending", "filled"];
+
+  const openInterestStatuses = market.resolved ? ["pending", "cancelled"] : ["pending"];
+
   const { data: allOrders } = await admin
     .from("orders")
     .select("side, amount, filled_amount, status, created_at")
     .eq("market_id", marketId)
-    .in("status", ["pending", "filled"])
+    .in("status", interestStatuses)
     .order("created_at", { ascending: true });
 
   // Calculate sentiment from BOTH executed bets + pending order amounts
@@ -68,26 +73,28 @@ export default async function MarketPage({ params }: Props) {
     .filter(b => b.side === "NO")
     .reduce((sum, b) => sum + (b.amount ?? 0), 0);
   const pendingYesAmt = (allOrders ?? [])
-    .filter((o: any) => o.side === "YES" && o.status === "pending")
+    .filter((o: any) => o.side === "YES" && openInterestStatuses.includes(o.status))
     .reduce((sum: number, o: any) => sum + ((o.amount ?? 0) - (o.filled_amount ?? 0)), 0);
   const pendingNoAmt = (allOrders ?? [])
-    .filter((o: any) => o.side === "NO" && o.status === "pending")
+    .filter((o: any) => o.side === "NO" && openInterestStatuses.includes(o.status))
     .reduce((sum: number, o: any) => sum + ((o.amount ?? 0) - (o.filled_amount ?? 0)), 0);
 
   const totalYes = betYesAmt + pendingYesAmt;
   const totalNo = betNoAmt + pendingNoAmt;
   const totalInterest = totalYes + totalNo;
 
-  // Fallback/freeze source: pool snapshot.
-  // In this CPMM representation, YES probability is derived from the NO pool.
-  const poolYes = Number(market.no_pool ?? 0);
-  const poolNo = Number(market.yes_pool ?? 0);
-  const poolTotal = poolYes + poolNo;
-  const poolYesPrice = poolTotal > 0 ? poolYes / poolTotal : 0.5;
+  // Market "odds" (interest) for open markets:
+  // total YES dollars / (total YES + total NO), where totals include:
+  // - executed bets
+  // - remaining open interest on the order book
+  let yPrice = totalInterest > 0 ? totalYes / totalInterest : 0.5;
+  let nPrice = 1 - yPrice;
 
-  const liveYesPrice = totalInterest > 0 ? totalYes / totalInterest : poolYesPrice;
-  const yPrice = market.resolved && poolTotal > 0 ? poolYesPrice : liveYesPrice;
-  const nPrice = 1 - yPrice;
+  // When resolved, show certainty: outcome side = 100%, other side = 0%.
+  if (market.resolved && (market.outcome === "YES" || market.outcome === "NO")) {
+    yPrice = market.outcome === "YES" ? 1 : 0;
+    nPrice = market.outcome === "NO" ? 1 : 0;
+  }
 
   // Build chart data from combined bets + orders chronologically
   type Activity = { side: string; amount: number; created_at: string };

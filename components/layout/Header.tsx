@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { ROUTES } from "@/lib/constants";
 import { isAdmin } from "@/lib/admin";
@@ -9,7 +10,7 @@ type Props = {
 };
 
 export default async function Header({
-  title = "Micro Prediction Market",
+  title = "mic",
 }: Props) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -30,9 +31,17 @@ export default async function Header({
     <header className="flex items-center justify-between gap-4 pb-12">
       <Link
         href={user ? ROUTES.DASHBOARD : ROUTES.HOME}
-        className="text-xl font-semibold tracking-tight text-zinc-100 no-underline hover:text-white transition-colors"
+        className="flex items-center no-underline hover:opacity-90 transition-opacity"
+        aria-label={title}
       >
-        {title}
+        <Image
+          src="/mic_dragon_treehacks.jpeg"
+          alt="mic"
+          width={256}
+          height={256}
+          priority
+          className="h-20 w-20 sm:h-24 sm:w-24 lg:h-32 lg:w-32 object-contain"
+        />
       </Link>
       <div className="flex items-center gap-3">
         {user ? (
