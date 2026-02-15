@@ -63,7 +63,7 @@ export default async function ChannelPage({ params }: Props) {
   // Get markets in this channel
   const { data: markets } = await supabase
     .from("markets")
-    .select("id, title, description, resolved, outcome")
+    .select("id, title, description, resolved, outcome, yes_pool, no_pool")
     .eq("channel_id", channelId)
     .order("created_at", { ascending: false });
 
@@ -102,8 +102,15 @@ export default async function ChannelPage({ params }: Props) {
     const totalNo = betNo + pendNo;
     const totalInterest = totalYes + totalNo;
 
-    const yesPercent = totalInterest > 0 ? (totalYes / totalInterest) * 100 : 50;
-    const noPercent = totalInterest > 0 ? (totalNo / totalInterest) * 100 : 50;
+    // Fallback/freeze source: pool snapshot (YES derived from NO pool in CPMM form)
+    const poolYes = Number((m as any).no_pool ?? 0);
+    const poolNo = Number((m as any).yes_pool ?? 0);
+    const poolTotal = poolYes + poolNo;
+    const poolYesPercent = poolTotal > 0 ? (poolYes / poolTotal) * 100 : 50;
+
+    const liveYesPercent = totalInterest > 0 ? (totalYes / totalInterest) * 100 : poolYesPercent;
+    const yesPercent = m.resolved && poolTotal > 0 ? poolYesPercent : liveYesPercent;
+    const noPercent = 100 - yesPercent;
     const totalVolume = mBets.reduce((s: number, b: any) => s + (b.amount ?? 0), 0);
     
     return {

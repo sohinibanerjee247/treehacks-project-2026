@@ -78,8 +78,16 @@ export default async function MarketPage({ params }: Props) {
   const totalNo = betNoAmt + pendingNoAmt;
   const totalInterest = totalYes + totalNo;
 
-  const yPrice = totalInterest > 0 ? totalYes / totalInterest : 0.5;
-  const nPrice = totalInterest > 0 ? totalNo / totalInterest : 0.5;
+  // Fallback/freeze source: pool snapshot.
+  // In this CPMM representation, YES probability is derived from the NO pool.
+  const poolYes = Number(market.no_pool ?? 0);
+  const poolNo = Number(market.yes_pool ?? 0);
+  const poolTotal = poolYes + poolNo;
+  const poolYesPrice = poolTotal > 0 ? poolYes / poolTotal : 0.5;
+
+  const liveYesPrice = totalInterest > 0 ? totalYes / totalInterest : poolYesPrice;
+  const yPrice = market.resolved && poolTotal > 0 ? poolYesPrice : liveYesPrice;
+  const nPrice = 1 - yPrice;
 
   // Build chart data from combined bets + orders chronologically
   type Activity = { side: string; amount: number; created_at: string };
