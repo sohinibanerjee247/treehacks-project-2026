@@ -5,10 +5,15 @@ import { isAdmin } from "@/lib/admin";
 import { ROUTES } from "@/lib/constants";
 import { Card } from "@/components/ui";
 import Button from "@/components/ui/Button";
-import PositionsList from "./PositionsList";
 import BetHistory from "./BetHistory";
+import PendingOrders from "./PendingOrders";
+import SuccessBanner from "./SuccessBanner";
 
-export default async function DashboardPage() {
+type Props = {
+  searchParams?: { trade_success?: string };
+};
+
+export default async function DashboardPage({ searchParams }: Props) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -48,16 +53,20 @@ export default async function DashboardPage() {
     const activeMarkets = (markets ?? []).filter((m: any) => !m.resolved);
     const resolvedMarkets = (markets ?? []).filter((m: any) => m.resolved);
 
-    return (
-      <div>
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-zinc-100">
-            Admin Dashboard
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Manage channels and markets.
-          </p>
-        </div>
+  return (
+    <div>
+      {searchParams?.trade_success && (
+        <SuccessBanner message={searchParams.trade_success} />
+      )}
+      
+      <div className="mb-8">
+        <h1 className="text-2xl font-semibold text-zinc-100">
+          Admin Dashboard
+        </h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          Manage channels and markets.
+        </p>
+      </div>
 
         <div className="mb-6 flex gap-3">
           <Link href={ROUTES.ADMIN_CREATE_CHANNEL}>
@@ -173,41 +182,33 @@ export default async function DashboardPage() {
   }
 
   // NORMAL USER VIEW
-  // Get user's positions (active holdings)
-  const { data: positions } = await supabase
-    .from("positions")
-    .select(`
-      market_id,
-      yes_shares,
-      no_shares,
-      market:markets!inner(
-        id,
-        title,
-        resolved,
-        outcome,
-        yes_pool,
-        no_pool,
-        channel_id,
-        channel:channels!inner(name)
-      )
-    `)
-    .eq("user_id", user.id)
-    .or("yes_shares.gt.0,no_shares.gt.0");
-
-  // Get trade history
+  // Get executed bets
   const { data: bets } = await supabase
     .from("bets")
     .select(`
       id,
       side,
       amount,
-      type,
       created_at,
-      market:markets!inner(id, title, resolved, outcome)
+      market:markets!inner(id, title, resolved, outcome, channel:channels!inner(name))
     `)
     .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(20);
+    .order("created_at", { ascending: false });
+
+  // Get pending orders
+  const { data: pendingOrders } = await supabase
+    .from("orders")
+    .select(`
+      id,
+      side,
+      amount,
+      filled_amount,
+      created_at,
+      market:markets!inner(id, title, channel:channels!inner(name))
+    `)
+    .eq("user_id", user.id)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
 
   // Get user's channels
   const { data: memberships } = await supabase
@@ -217,6 +218,10 @@ export default async function DashboardPage() {
 
   return (
     <div>
+      {searchParams?.trade_success && (
+        <SuccessBanner message={searchParams.trade_success} />
+      )}
+
       <div className="mb-8 border-b border-zinc-800/80 pb-6">
         <h1 className="text-3xl font-bold tracking-tight text-zinc-100">
           Welcome, {displayName}
@@ -229,18 +234,20 @@ export default async function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main content */}
         <div className="lg:col-span-2 space-y-8">
-          {/* Active bets */}
-          <section>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-zinc-100">Active Bets</h2>
-            </div>
-            <PositionsList positions={(positions as any) ?? []} />
-          </section>
+          {/* Pending orders */}
+          {((pendingOrders as any) ?? []).length > 0 && (
+            <section>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-zinc-100">Pending</h2>
+              </div>
+              <PendingOrders orders={(pendingOrders as any) ?? []} />
+            </section>
+          )}
 
-          {/* Trade history */}
+          {/* Executed bets */}
           <section>
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-zinc-100">Trade History</h2>
+              <h2 className="text-xl font-semibold text-zinc-100">My Bets</h2>
             </div>
             <BetHistory bets={(bets as any) ?? []} />
           </section>

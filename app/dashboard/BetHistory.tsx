@@ -15,6 +15,9 @@ type Bet = {
     title: string;
     resolved: boolean;
     outcome: string | null;
+    channel?: {
+      name: string;
+    };
   };
 };
 
@@ -26,7 +29,7 @@ export default function BetHistory({ bets }: Props) {
   if (!bets || bets.length === 0) {
     return (
       <Card className="p-8 text-center">
-        <p className="text-sm text-zinc-500">No trades yet.</p>
+        <p className="text-sm text-zinc-500">No bets yet.</p>
         <Link href={ROUTES.CHANNELS} className="mt-2 inline-block text-sm text-accent hover:text-accent-hover">
           Find markets
         </Link>
@@ -42,58 +45,59 @@ export default function BetHistory({ bets }: Props) {
 
         return (
           <li key={bet.id}>
-            <Card className="p-3">
-              <Link
-                href={ROUTES.MARKET(bet.market.id)}
-                className="block text-sm font-medium text-zinc-200 hover:text-white"
-              >
-                {bet.market.title}
-              </Link>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                {/* Action type */}
-                <span className="rounded bg-zinc-800 px-1.5 py-0.5 font-medium text-zinc-400">
-                  {bet.type === "sell" ? "Reduced" : "Placed"}
-                </span>
-
-                {/* Side */}
-                <span
-                  className={`rounded px-1.5 py-0.5 font-medium ${
-                    bet.side === "YES"
-                      ? "bg-emerald-500/10 text-emerald-400"
-                      : "bg-red-500/10 text-red-400"
-                  }`}
-                >
-                  {bet.side}
-                </span>
-
-                {/* Amount */}
-                <span className="text-zinc-500">
-                  ${(bet.amount / 100).toFixed(2)}
-                </span>
-
-                {/* Status */}
-                {bet.market.resolved && (
-                  <span
-                    className={`ml-auto font-semibold ${
-                      isWin
+            <Card className="p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <Link
+                    href={ROUTES.MARKET(bet.market.id)}
+                    className="block text-sm font-medium text-zinc-200 hover:text-white line-clamp-1"
+                  >
+                    {bet.market.title}
+                  </Link>
+                  {bet.market.channel && (
+                    <p className="mt-0.5 text-xs text-zinc-600">
+                      {bet.market.channel.name}
+                    </p>
+                  )}
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="text-base font-semibold text-zinc-100">
+                    ${(bet.amount / 100).toFixed(2)}
+                  </div>
+                  <div
+                    className={`text-xs font-medium ${
+                      bet.side === "YES"
                         ? "text-emerald-400"
-                        : isLoss
-                          ? "text-red-400"
-                          : "text-zinc-500"
+                        : "text-red-400"
                     }`}
                   >
-                    {isWin ? "Won" : isLoss ? "Lost" : "Resolved"}
-                  </span>
-                )}
-                {!bet.market.resolved && (
-                  <span className="ml-auto text-zinc-600">Active</span>
-                )}
+                    {bet.side}
+                  </div>
+                </div>
               </div>
-
-              {/* Timestamp */}
-              <p className="mt-1.5 text-xs text-zinc-600">
-                {new Date(bet.created_at).toLocaleString()}
-              </p>
+              
+              <div className="mt-3 flex items-center justify-between text-xs">
+                <div>
+                  {bet.market.resolved ? (
+                    <span
+                      className={`font-semibold ${
+                        isWin
+                          ? "text-emerald-400"
+                          : isLoss
+                            ? "text-red-400"
+                            : "text-zinc-500"
+                      }`}
+                    >
+                      {isWin ? "Won" : isLoss ? "Lost" : "Resolved"}
+                    </span>
+                  ) : (
+                    <span className="text-zinc-500">Active</span>
+                  )}
+                </div>
+                <span className="text-zinc-600">
+                  {new Date(bet.created_at).toLocaleDateString()}
+                </span>
+              </div>
             </Card>
           </li>
         );

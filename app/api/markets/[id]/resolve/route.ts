@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/admin";
 
 /**
  * Resolve a market (admin only).
- * Winning YES/NO units pay 100 cents ($1) each. Losing units pay 0.
+ *
+ * Payout: winners split the ENTIRE pool proportionally.
+ * Example: $100 on YES, $50 on NO, outcome = YES
+ *   → Each YES bettor gets (their_bet / $100) × $150
+ *
+ * Also cancels all pending orders on this market.
  */
 export async function POST(
   req: NextRequest,
@@ -16,7 +22,6 @@ export async function POST(
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
   if (!(await isAdmin())) {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
@@ -26,27 +31,27 @@ export async function POST(
   const outcome = String(body.outcome ?? "").toUpperCase();
 
   if (outcome !== "YES" && outcome !== "NO") {
-    return NextResponse.json(
-      { error: "outcome must be 'yes' or 'no'" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "outcome must be YES or NO" }, { status: 400 });
   }
 
-  const { data: market, error: marketFetchError } = await supabase
+  const { data: market } = await supabase
     .from("markets")
     .select("id, resolved")
     .eq("id", marketId)
     .single();
 
-  if (marketFetchError || !market) {
+  if (!market) {
     return NextResponse.json({ error: "Market not found" }, { status: 404 });
   }
   if (market.resolved) {
-    return NextResponse.json({ error: "Market is already resolved" }, { status: 400 });
+    return NextResponse.json({ error: "Already resolved" }, { status: 400 });
   }
 
-  // Mark market as resolved
-  const { error: marketError } = await supabase
+  // Admin client bypasses RLS for cross-user payouts
+  const admin = createAdminClient();
+
+  // Mark resolved
+  await admin
     .from("markets")
     .update({
       resolved: true,
@@ -56,48 +61,48 @@ export async function POST(
     })
     .eq("id", marketId);
 
-  if (marketError) {
-    return NextResponse.json({ error: marketError.message }, { status: 500 });
-  }
+  // Cancel all pending orders for this market
+  await admin
+    .from("orders")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("market_id", marketId)
+    .eq("status", "pending");
 
-  // Get all positions for this market
-  const { data: positions, error: posError } = await supabase
-    .from("positions")
-    .select("user_id, yes_shares, no_shares")
+  // Get ALL executed bets
+  const { data: allBets } = await admin
+    .from("bets")
+    .select("user_id, side, amount")
     .eq("market_id", marketId);
 
-  if (posError) {
-    console.error("Failed to get positions:", posError);
-    return NextResponse.json({ error: posError.message }, { status: 500 });
-  }
+  const bets = allBets ?? [];
+  const totalPool = bets.reduce((s, b) => s + b.amount, 0);
+  const winningBets = bets.filter((b) => b.side === outcome);
+  const winningPool = winningBets.reduce((s, b) => s + b.amount, 0);
 
-  // Pay out: each winning unit = 100 cents ($1)
+  // Pay out winners proportionally from the total pool
   const payouts: { user_id: string; payout: number }[] = [];
 
-  for (const pos of positions ?? []) {
-    const winningUnits =
-      outcome === "YES" ? pos.yes_shares : pos.no_shares;
+  if (winningPool > 0) {
+    for (const bet of winningBets) {
+      const share = bet.amount / winningPool;
+      const payout = Math.floor(share * totalPool);
 
-    if (winningUnits <= 0) continue;
-
-    const payout = Math.floor(winningUnits * 100);
-
-    // Get current balance
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("balance")
-      .eq("id", pos.user_id)
-      .single();
-
-    if (profile) {
-      await supabase
+      const { data: p } = await admin
         .from("profiles")
-        .update({ balance: profile.balance + payout })
-        .eq("id", pos.user_id);
-    }
+        .select("balance")
+        .eq("id", bet.user_id)
+        .single();
 
-    payouts.push({ user_id: pos.user_id, payout });
+      if (p) {
+        await admin
+          .from("profiles")
+          .update({ balance: p.balance + payout })
+          .eq("id", bet.user_id);
+      }
+
+      payouts.push({ user_id: bet.user_id, payout });
+    }
   }
 
-  return NextResponse.json({ ok: true, marketId, outcome, payouts });
+  return NextResponse.json({ ok: true, marketId, outcome, totalPool, payouts });
 }

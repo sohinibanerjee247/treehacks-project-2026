@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Start visible pools at 0. Pricing uses virtual liquidity internally in UI/trade logic.
+  // Create the market
   const { data: market, error } = await supabase
     .from("markets")
     .insert({
@@ -59,8 +59,6 @@ export async function POST(req: NextRequest) {
       close_time: close.toISOString(),
       expected_resolution_time: expected.toISOString(),
       created_by: user.id,
-      yes_pool: 0,
-      no_pool: 0,
     })
     .select()
     .single();

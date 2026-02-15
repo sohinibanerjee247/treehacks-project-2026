@@ -1,195 +1,204 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/admin";
-import { buyNo, buyYes } from "@/lib/market";
 
-/** Place a bet on a market (non-admin only). */
+/**
+ * POST /api/markets/[id]/bet
+ *
+ * 1. Look for pending orders on the OPPOSITE side (oldest first / FIFO).
+ * 2. Match dollar-for-dollar. For each match deduct BOTH balances, record bets.
+ * 3. Unmatched remainder → new pending order (no balance deduction).
+ *
+ * Uses an admin (service-role) client for cross-user writes (profiles, orders,
+ * bets) so RLS doesn't block updates to the counterparty's rows.
+ *
+ * Body: { side: "YES" | "NO", amount: number (dollars) }
+ */
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  // Auth check uses the normal per-user client
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  // Admins cannot place bets
   if (await isAdmin()) {
-    return NextResponse.json({ error: "Admins cannot place bets" }, { status: 403 });
+    return NextResponse.json({ error: "Admins cannot bet" }, { status: 403 });
   }
 
   const { id: marketId } = params;
   const body = await req.json();
   const side = String(body.side ?? "").toUpperCase();
-  const amount = Number(body.amount ?? 0);
+  const amountDollars = Number(body.amount ?? 0);
 
   if (side !== "YES" && side !== "NO") {
-    return NextResponse.json(
-      { error: "side must be 'YES' or 'NO'" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "side must be YES or NO" }, { status: 400 });
+  }
+  if (amountDollars < 1) {
+    return NextResponse.json({ error: "Minimum bet is $1" }, { status: 400 });
   }
 
-  if (amount < 100) {
-    return NextResponse.json(
-      { error: "Minimum bet is $1.00 (100 cents)" },
-      { status: 400 }
-    );
-  }
+  const amountCents = Math.round(amountDollars * 100);
 
-  // Check market exists and is open
-  const { data: market, error: marketError } = await supabase
+  // Admin client bypasses RLS for cross-user operations
+  const admin = createAdminClient();
+
+  // Verify market is open
+  const { data: market } = await admin
     .from("markets")
-    .select("id, resolved, close_time, yes_pool, no_pool")
+    .select("id, resolved")
     .eq("id", marketId)
     .single();
 
-  if (marketError || !market) {
+  if (!market) {
     return NextResponse.json({ error: "Market not found" }, { status: 404 });
   }
-
   if (market.resolved) {
     return NextResponse.json({ error: "Market is closed" }, { status: 400 });
   }
-  if (market.close_time && new Date(market.close_time).getTime() <= Date.now()) {
-    return NextResponse.json({ error: "Market is closed" }, { status: 400 });
-  }
 
-  // Check user balance
-  const { data: profile } = await supabase
+  // Verify user balance
+  const { data: profile } = await admin
     .from("profiles")
     .select("balance")
     .eq("id", user.id)
     .single();
 
-  if (!profile || profile.balance < amount) {
-    return NextResponse.json(
-      { error: "Insufficient balance" },
-      { status: 400 }
-    );
+  if (!profile) {
+    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  }
+  if (profile.balance < amountCents) {
+    return NextResponse.json({ error: "Insufficient balance" }, { status: 400 });
   }
 
-  // Get existing position
-  const { data: position } = await supabase
-    .from("positions")
-    .select("yes_shares, no_shares")
-    .eq("user_id", user.id)
+  // ── Matching engine ───────────────────────────────────────────────
+  const oppositeSide = side === "YES" ? "NO" : "YES";
+
+  const { data: matchingOrders } = await admin
+    .from("orders")
+    .select("*")
     .eq("market_id", marketId)
-    .maybeSingle();
+    .eq("side", oppositeSide)
+    .eq("status", "pending")
+    .order("created_at", { ascending: true });
 
-  const currentYesShares = position?.yes_shares ?? 0;
-  const currentNoShares = position?.no_shares ?? 0;
+  let remaining = amountCents;
+  let totalFilled = 0;
 
-  const effectiveYesPool = (market.yes_pool ?? 0) > 0 ? market.yes_pool : 10000;
-  const effectiveNoPool = (market.no_pool ?? 0) > 0 ? market.no_pool : 10000;
+  for (const order of matchingOrders ?? []) {
+    if (remaining <= 0) break;
+    if (order.user_id === user.id) continue;
 
-  const result = side === "YES"
-    ? buyYes(effectiveYesPool, effectiveNoPool, amount)
-    : buyNo(effectiveYesPool, effectiveNoPool, amount);
+    const orderRemaining = order.amount - order.filled_amount;
+    if (orderRemaining <= 0) continue;
 
-  const newYesPool = result.yesPool;
-  const newNoPool = result.noPool;
-  const newYesShares = side === "YES" ? currentYesShares + result.shares : currentYesShares;
-  const newNoShares = side === "NO" ? currentNoShares + result.shares : currentNoShares;
+    const fillAmount = Math.min(remaining, orderRemaining);
 
-  // Deduct balance
-  const { error: updateError } = await supabase
-    .from("profiles")
-    .update({ balance: profile.balance - amount })
-    .eq("id", user.id);
-
-  if (updateError) {
-    return NextResponse.json(
-      { error: "Failed to update balance" },
-      { status: 500 }
-    );
-  }
-
-  // Update pool
-  const { error: poolError } = await supabase
-    .from("markets")
-    .update({ yes_pool: newYesPool, no_pool: newNoPool })
-    .eq("id", marketId);
-
-  if (poolError) {
-    await supabase
+    // Check counterparty can still afford it
+    const { data: matchedProfile } = await admin
       .from("profiles")
-      .update({ balance: profile.balance })
+      .select("balance")
+      .eq("id", order.user_id)
+      .single();
+
+    if (!matchedProfile || matchedProfile.balance < fillAmount) {
+      await admin
+        .from("orders")
+        .update({ status: "cancelled", updated_at: new Date().toISOString() })
+        .eq("id", order.id);
+      continue;
+    }
+
+    // Deduct counterparty balance
+    await admin
+      .from("profiles")
+      .update({ balance: matchedProfile.balance - fillAmount })
+      .eq("id", order.user_id);
+
+    // Deduct current user balance
+    const { data: freshProfile } = await admin
+      .from("profiles")
+      .select("balance")
+      .eq("id", user.id)
+      .single();
+
+    await admin
+      .from("profiles")
+      .update({ balance: (freshProfile?.balance ?? profile.balance) - fillAmount })
       .eq("id", user.id);
 
-    return NextResponse.json(
-      { error: "Failed to update market pool" },
-      { status: 500 }
-    );
-  }
+    // Record bets for both sides
+    await admin.from("bets").insert({
+      user_id: order.user_id,
+      market_id: marketId,
+      side: order.side,
+      amount: fillAmount,
+    });
 
-  const { error: posError } = await supabase.from("positions").upsert(
-    {
+    await admin.from("bets").insert({
       user_id: user.id,
       market_id: marketId,
-      yes_shares: newYesShares,
-      no_shares: newNoShares,
-    },
-    { onConflict: "user_id,market_id" }
-  );
+      side: side,
+      amount: fillAmount,
+    });
 
-  if (posError) {
-    await supabase
-      .from("profiles")
-      .update({ balance: profile.balance })
-      .eq("id", user.id);
-    await supabase
-      .from("markets")
-      .update({ yes_pool: market.yes_pool, no_pool: market.no_pool })
-      .eq("id", marketId);
+    // Update matched order
+    const newFilled = order.filled_amount + fillAmount;
+    await admin
+      .from("orders")
+      .update({
+        filled_amount: newFilled,
+        status: newFilled >= order.amount ? "filled" : "pending",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", order.id);
 
-    return NextResponse.json(
-      { error: "Failed to update position" },
-      { status: 500 }
-    );
+    remaining -= fillAmount;
+    totalFilled += fillAmount;
   }
 
-  const { data: bet, error: betError } = await supabase
-    .from("bets")
-    .insert({
+  // ── Place remainder as pending order ──────────────────────────────
+  if (remaining > 0) {
+    const { error: orderError } = await admin.from("orders").insert({
       user_id: user.id,
       market_id: marketId,
-      side,
-      amount,
-      type: "buy",
-    })
-    .select()
-    .single();
+      side: side,
+      price: 50,
+      amount: remaining,
+      filled_amount: 0,
+      status: "pending",
+    });
 
-  if (betError) {
-    // Rollback updates
-    await supabase
-      .from("profiles")
-      .update({ balance: profile.balance })
-      .eq("id", user.id);
-    await supabase
-      .from("markets")
-      .update({ yes_pool: market.yes_pool, no_pool: market.no_pool })
-      .eq("id", marketId);
-    await supabase
-      .from("positions")
-      .upsert(
-        {
-          user_id: user.id,
-          market_id: marketId,
-          yes_shares: currentYesShares,
-          no_shares: currentNoShares,
-        },
-        { onConflict: "user_id,market_id" }
+    if (orderError) {
+      console.error("Failed to insert order:", orderError);
+      return NextResponse.json(
+        { error: "Failed to place order: " + orderError.message },
+        { status: 500 }
       );
-
-    return NextResponse.json(
-      { error: "Failed to place bet" },
-      { status: 500 }
-    );
+    }
   }
 
-  return NextResponse.json(bet, { status: 201 });
+  // ── Response ──────────────────────────────────────────────────────
+  if (totalFilled > 0 && remaining > 0) {
+    return NextResponse.json({
+      ok: true,
+      message: `$${(totalFilled / 100).toFixed(2)} matched on ${side}, $${(remaining / 100).toFixed(2)} waiting for a counterparty`,
+    });
+  } else if (totalFilled > 0) {
+    return NextResponse.json({
+      ok: true,
+      message: `Bet placed: $${(totalFilled / 100).toFixed(2)} on ${side}`,
+    });
+  } else {
+    return NextResponse.json({
+      ok: true,
+      message: `$${(remaining / 100).toFixed(2)} on ${side} — waiting for a counterparty`,
+    });
+  }
 }

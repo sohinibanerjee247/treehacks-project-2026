@@ -55,40 +55,39 @@ export default async function ChannelPage({ params }: Props) {
     .select("*", { count: "exact", head: true })
     .eq("channel_id", channelId);
 
-  // Get markets in this channel with pool state
+  // Get markets in this channel
   const { data: markets } = await supabase
     .from("markets")
-    .select("id, title, description, resolved, outcome, yes_pool, no_pool")
+    .select("id, title, description, resolved, outcome")
     .eq("channel_id", channelId)
     .order("created_at", { ascending: false });
 
-  // Get bet history so visible pool reflects real user bet dollars
+  // Get recent bets to calculate market sentiment
   const marketIds = markets?.map((m) => m.id) ?? [];
   const { data: bets } = marketIds.length
     ? await supabase
         .from("bets")
-        .select("market_id, amount, type")
+        .select("market_id, side, amount")
         .in("market_id", marketIds)
+        .order("created_at", { ascending: false })
     : { data: [] as any[] };
 
-  // Use CPMM pricing from pool state (fallback to 50/50 if no pools set)
+  // Calculate odds from recent trade distribution
   const marketOdds = markets?.map((m) => {
-    const yp = (m.yes_pool ?? 0) > 0 ? m.yes_pool : 10000;
-    const np = (m.no_pool ?? 0) > 0 ? m.no_pool : 10000;
-    const total = yp + np;
-    const yesPercent = total > 0 ? (np / total) * 100 : 50;
-    const noPercent = total > 0 ? (yp / total) * 100 : 50;
-    const visiblePool = (bets ?? [])
-      .filter((b: any) => b.market_id === m.id)
-      .reduce((sum: number, b: any) => {
-        const delta = b.type === "sell" ? -(b.amount ?? 0) : (b.amount ?? 0);
-        return sum + delta;
-      }, 0);
+    const marketBets = (bets ?? []).filter((b: any) => b.market_id === m.id);
+    const yesCount = marketBets.filter((b: any) => b.side === "YES").length;
+    const noCount = marketBets.filter((b: any) => b.side === "NO").length;
+    const total = yesCount + noCount;
+    
+    const yesPercent = total > 0 ? (yesCount / total) * 100 : 50;
+    const noPercent = total > 0 ? (noCount / total) * 100 : 50;
+    const totalVolume = marketBets.reduce((sum: number, b: any) => sum + (b.amount ?? 0), 0);
+    
     return {
       ...m,
       yesOdds: yesPercent,
       noOdds: noPercent,
-      totalPool: Math.max(0, visiblePool),
+      totalVolume: totalVolume,
     };
   });
 
@@ -164,9 +163,9 @@ export default async function ChannelPage({ params }: Props) {
                                 <h3 className="font-medium text-zinc-200">
                                   {m.title}
                                 </h3>
-                                {m.totalPool > 0 && (
+                                {m.totalVolume > 0 && (
                                   <p className="mt-1 text-xs text-zinc-600">
-                                    ${(m.totalPool / 100).toFixed(2)} in pool
+                                    ${(m.totalVolume / 100).toFixed(2)} volume
                                   </p>
                                 )}
                               </div>

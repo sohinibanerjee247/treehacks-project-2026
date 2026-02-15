@@ -3,8 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
 import { Card } from "@/components/ui";
 import { ROUTES } from "@/lib/constants";
-import { yesPrice as calcYesPrice, noPrice as calcNoPrice } from "@/lib/market";
-import TradeForm from "./TradeForm";
+import BetForm from "./BetForm";
 import ResolveButtons from "./ResolveButtons";
 
 type Props = { params: { id: string } };
@@ -35,27 +34,28 @@ export default async function MarketPage({ params }: Props) {
     );
   }
 
-  const yp = (market.yes_pool ?? 0) > 0 ? market.yes_pool : 10000;
-  const np = (market.no_pool ?? 0) > 0 ? market.no_pool : 10000;
-  const yPrice = calcYesPrice(yp, np);
-  const nPrice = calcNoPrice(yp, np);
-  const { data: bets } = await supabase
+  // Get recent market prices from order book
+  // Default to 50/50 if no orders exist
+  const { data: recentBets } = await supabase
     .from("bets")
-    .select("amount, type")
-    .eq("market_id", marketId);
-  // Visible pool = net dollars currently at risk in this market.
-  const visiblePool = (bets ?? [])
-    .reduce((sum: number, b: any) => {
-      const delta = b.type === "sell" ? -(b.amount ?? 0) : (b.amount ?? 0);
-      return sum + delta;
-    }, 0);
+    .select("side")
+    .eq("market_id", marketId)
+    .order("created_at", { ascending: false })
+    .limit(10);
+  
+  // Calculate implied probability from recent trade distribution
+  const yesCount = recentBets?.filter(b => b.side === "YES").length ?? 0;
+  const noCount = recentBets?.filter(b => b.side === "NO").length ?? 0;
+  const total = yesCount + noCount;
+  
+  const yPrice = total > 0 ? yesCount / total : 0.5;
+  const nPrice = total > 0 ? noCount / total : 0.5;
 
   // Get current user
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Get user exposure and balance
+  // Get user balance
   let userBalance = 0;
-  let position = { yes_shares: 0, no_shares: 0 };
 
   if (user && !userIsAdmin) {
     const { data: profile } = await supabase
@@ -64,16 +64,6 @@ export default async function MarketPage({ params }: Props) {
       .eq("id", user.id)
       .single();
     userBalance = profile?.balance ?? 0;
-
-    const { data: pos } = await supabase
-      .from("positions")
-      .select("yes_shares, no_shares")
-      .eq("user_id", user.id)
-      .eq("market_id", marketId)
-      .maybeSingle();
-    if (pos) {
-      position = { yes_shares: pos.yes_shares, no_shares: pos.no_shares };
-    }
   }
 
   return (
@@ -115,16 +105,6 @@ export default async function MarketPage({ params }: Props) {
               {(nPrice * 100).toFixed(1)}%
             </p>
           </div>
-        </div>
-
-        {/* Pool and exposure info */}
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-600">
-          <span>Pool: ${(Math.max(0, visiblePool) / 100).toFixed(2)}</span>
-          {!userIsAdmin && (position.yes_shares > 0 || position.no_shares > 0) && (
-            <span>
-              Your exposure: {position.yes_shares.toFixed(1)} YES / {position.no_shares.toFixed(1)} NO
-            </span>
-          )}
         </div>
       </Card>
 
@@ -169,14 +149,13 @@ export default async function MarketPage({ params }: Props) {
         <ResolveButtons marketId={marketId} marketTitle={market.title} />
       )}
 
-      {/* User: trade */}
+      {/* User: bet */}
       {!userIsAdmin && user && !market.resolved && (
-        <TradeForm
+        <BetForm
           marketId={marketId}
           balance={userBalance}
-          yesPrice={yPrice}
-          noPrice={nPrice}
-          position={position}
+          yesPercent={yPrice * 100}
+          noPercent={nPrice * 100}
         />
       )}
 
